@@ -1,0 +1,147 @@
+import type { Member } from "./scheduleTypes";
+
+export function normalizeMemberNameForMatch(value: string): string {
+  return value.replace(/[^A-Za-z가-힣]/g, "").toLowerCase();
+}
+
+function normalizeOcrConfusions(value: string): string {
+  return value
+    .replace(/확/g, "황")
+    .replace(/헌/g, "현")
+    .replace(/칠/g, "철")
+    .replace(/무/g, "문");
+}
+
+function distance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  const current = Array.from({ length: b.length + 1 }, () => 0);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    current[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j += 1) previous[j] = current[j];
+  }
+
+  return previous[b.length];
+}
+
+function similarity(a: string, b: string): number {
+  const maxLength = Math.max(a.length, b.length);
+  if (maxLength === 0) return 0;
+  return 1 - distance(a, b) / maxLength;
+}
+
+function bestWindowSimilarity(input: string, target: string): number {
+  if (!input || !target) return 0;
+  if (input.includes(target)) return 1;
+
+  const minLength = Math.max(1, target.length - 1);
+  const maxLength = Math.min(input.length, target.length + 1);
+  let best = similarity(input, target);
+
+  for (let size = minLength; size <= maxLength; size += 1) {
+    for (let index = 0; index <= input.length - size; index += 1) {
+      best = Math.max(best, similarity(input.slice(index, index + size), target));
+    }
+  }
+
+  return best;
+}
+
+function uniqueBaptismalNames(members: Member[]): Set<string> {
+  const counts = new Map<string, number>();
+  members.forEach((member) => {
+    const baptismalName = normalizeMemberNameForMatch(member.baptismalName ?? "");
+    if (!baptismalName) return;
+    counts.set(baptismalName, (counts.get(baptismalName) ?? 0) + 1);
+  });
+
+  return new Set([...counts.entries()].filter(([, count]) => count === 1).map(([name]) => name));
+}
+
+function memberAliases(member: Member, uniqueBaptismalNameSet: Set<string>): string[] {
+  const name = normalizeMemberNameForMatch(member.name);
+  const baptismalName = normalizeMemberNameForMatch(member.baptismalName ?? "");
+  const aliases = [name];
+
+  if (name && baptismalName) aliases.push(`${name}${baptismalName}`);
+  if (baptismalName && uniqueBaptismalNameSet.has(baptismalName)) aliases.push(baptismalName);
+  if (member.name === "추용호") aliases.push("mark", "marco");
+
+  return aliases.filter(Boolean);
+}
+
+function normalizedTokens(value: string): string[] {
+  return value
+    .split(/[^A-Za-z가-힣]+/)
+    .map((token) => normalizeOcrConfusions(normalizeMemberNameForMatch(token)))
+    .filter(Boolean);
+}
+
+function resolveByUniqueNameSuffix(members: Member[], value: string): string | undefined {
+  const tokens = normalizedTokens(value);
+  if (tokens.length === 0) return undefined;
+
+  const suffixCounts = new Map<string, number>();
+  members.forEach((member) => {
+    const name = normalizeOcrConfusions(normalizeMemberNameForMatch(member.name));
+    if (name.length < 3) return;
+    const suffix = name.slice(-2);
+    suffixCounts.set(suffix, (suffixCounts.get(suffix) ?? 0) + 1);
+  });
+
+  const matchedMember = members.find((member) => {
+    const name = normalizeOcrConfusions(normalizeMemberNameForMatch(member.name));
+    const suffix = name.length >= 3 ? name.slice(-2) : "";
+    return suffix && suffixCounts.get(suffix) === 1 && tokens.includes(suffix);
+  });
+
+  return matchedMember?.name;
+}
+
+export function resolveMemberNameFromText(members: Member[], value: string): string | undefined {
+  const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
+  if (!input) return undefined;
+
+  const uniqueBaptismalNameSet = uniqueBaptismalNames(members);
+  const matches = members
+    .map((member) => {
+      const score = Math.max(
+        ...memberAliases(member, uniqueBaptismalNameSet).map((alias) => bestWindowSimilarity(input, normalizeOcrConfusions(alias))),
+      );
+      return { member, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const [best, second] = matches;
+  if (!best) return undefined;
+
+  const confident = best.score >= 0.92;
+  const fuzzyButClear = best.score >= 0.72 && best.score - (second?.score ?? 0) >= 0.08;
+  if (confident || fuzzyButClear) return best.member.name;
+
+  return resolveByUniqueNameSuffix(members, value);
+}
+
+export function resolveMemberNamesFromText(members: Member[], value: string): string[] {
+  const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
+  if (!input) return [];
+
+  const exactMatches = members
+    .map((member) => ({ member, index: input.indexOf(normalizeOcrConfusions(normalizeMemberNameForMatch(member.name))) }))
+    .filter(({ index }) => index >= 0)
+    .sort((a, b) => a.index - b.index)
+    .map(({ member }) => member.name);
+
+  if (exactMatches.length > 0) return [...new Set(exactMatches)];
+
+  const matchedName = resolveMemberNameFromText(members, value);
+  return matchedName ? [matchedName] : [];
+}

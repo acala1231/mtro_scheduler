@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">복사단 일정표</title>
+  <desc id="desc">월간 일정표를 상징하는 파란색 달력 아이콘</desc>
+  <rect width="512" height="512" rx="112" fill="#1f3a68"/>
+  <rect x="104" y="132" width="304" height="264" rx="34" fill="#ffffff"/>
+  <rect x="104" y="132" width="304" height="74" rx="34" fill="#d6e9f8"/>
+  <path d="M104 180h304v50H104z" fill="#d6e9f8"/>
+  <rect x="154" y="90" width="34" height="86" rx="17" fill="#ffffff"/>
+  <rect x="324" y="90" width="34" height="86" rx="17" fill="#ffffff"/>
+  <g fill="#1f3a68">
+    <rect x="150" y="256" width="48" height="42" rx="12"/>
+    <rect x="232" y="256" width="48" height="42" rx="12"/>
+    <rect x="314" y="256" width="48" height="42" rx="12"/>
+    <rect x="150" y="326" width="48" height="42" rx="12"/>
+    <rect x="232" y="326" width="48" height="42" rx="12"/>
+  </g>
+  <path d="M326 358l-34-34 20-20 14 14 40-42 20 20z" fill="#2e7d32"/>
+</svg>
