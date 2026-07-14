@@ -2,13 +2,13 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
-  base: "/mtro_scheduler/",
+export default defineConfig(({ command }) => ({
+  base: command === "serve" ? "/" : "/mtro_scheduler/",
   plugins: [
     react(),
     VitePWA({
       registerType: "prompt",
-      includeAssets: ["favicon.svg", "favicon-16x16.png", "favicon-32x32.png", "apple-touch-icon.png", "app-icon.svg"],
+      includeAssets: ["favicon.ico", "favicon-16x16.png", "favicon-32x32.png", "apple-touch-icon.png", "app-icon.svg"],
       manifest: {
         id: "/mtro_scheduler/",
         name: "복사단 일정표",
@@ -54,4 +54,4 @@ export default defineConfig({
   test: {
     environment: "jsdom",
   },
-});
+}));
