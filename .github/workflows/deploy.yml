@@ -33,16 +33,12 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
       - name: Build
         run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist
 
   deploy:
@@ -55,5 +51,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-        with:
-          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
