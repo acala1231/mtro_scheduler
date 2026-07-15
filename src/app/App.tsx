@@ -69,7 +69,6 @@ export function App() {
     settings,
     votes,
     result,
-    savedState,
     setSavedState,
     updateSettings,
     updateVotes,
@@ -222,9 +221,6 @@ export function App() {
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
                 {monthTitle(month)}
-              </Typography>
-              <Typography variant="caption" color={savedState === "저장 실패" ? "error" : "text.secondary"} role="status" aria-live="polite">
-                {savedState}
               </Typography>
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", ml: "auto" }}>

@@ -1,4 +1,5 @@
 import type { VoteCountInfo, VoteEntry } from "./scheduleTypes";
+import type { OcrResolvedVoteEntry } from "./voteAliasRebalance";
 import type { ParseVoteResult } from "./voteParser";
 
 export type VoteOcrAttempt = {
@@ -7,6 +8,10 @@ export type VoteOcrAttempt = {
   sanitizedRawText: string;
   parsed: ParseVoteResult;
   score: number;
+  resolvedVotes?: {
+    serviceVotes: OcrResolvedVoteEntry[];
+    carVotes: OcrResolvedVoteEntry[];
+  };
 };
 
 function uniqueVoteEntries(entries: VoteEntry[]): VoteEntry[] {
@@ -19,55 +24,61 @@ function uniqueVoteEntries(entries: VoteEntry[]): VoteEntry[] {
   });
 }
 
-function uniqueVoteCounts(counts: VoteCountInfo[]): VoteCountInfo[] {
-  const seen = new Set<string>();
-  return counts.filter((count) => {
-    const key = `${count.kind}:${count.scheduleKey}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function entriesByKind(parsed: ParseVoteResult, kind: VoteCountInfo["kind"]): VoteEntry[] {
   return kind === "service" ? parsed.serviceVotes : parsed.carVotes;
 }
 
-function mergeEntriesByVoteCount(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"], counts: VoteCountInfo[]): VoteEntry[] {
-  const scheduleKeys = new Set<string>();
-  attempts.forEach((attempt) => entriesByKind(attempt.parsed, kind).forEach((entry) => scheduleKeys.add(entry.scheduleKey)));
-  counts.filter((count) => count.kind === kind).forEach((count) => scheduleKeys.add(count.scheduleKey));
+function resolvedEntriesByKind(attempt: VoteOcrAttempt, kind: VoteCountInfo["kind"]): OcrResolvedVoteEntry[] {
+  const resolved = kind === "service" ? attempt.resolvedVotes?.serviceVotes : attempt.resolvedVotes?.carVotes;
+  return resolved ?? entriesByKind(attempt.parsed, kind).map((entry) => ({ entry, matchedByAlias: false }));
+}
 
-  return uniqueVoteEntries(
+function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { entries: VoteEntry[]; resolvedEntries: OcrResolvedVoteEntry[]; counts: VoteCountInfo[] } {
+  const scheduleKeys = new Set<string>();
+  attempts.forEach((attempt) => resolvedEntriesByKind(attempt, kind).forEach(({ entry }) => scheduleKeys.add(entry.scheduleKey)));
+  attempts.forEach((attempt) => attempt.parsed.voteCounts.filter((count) => count.kind === kind).forEach((count) => scheduleKeys.add(count.scheduleKey)));
+  const selectedCounts: VoteCountInfo[] = [];
+
+  const selectedResolvedEntries =
     [...scheduleKeys].flatMap((scheduleKey) => {
-      const expectedCount = counts.find((count) => count.kind === kind && count.scheduleKey === scheduleKey)?.expectedCount;
-      if (expectedCount === undefined) {
-        return attempts.flatMap((attempt) => entriesByKind(attempt.parsed, kind).filter((entry) => entry.scheduleKey === scheduleKey));
+      const candidates = attempts.map((attempt) => {
+        const entries = resolvedEntriesByKind(attempt, kind).filter(({ entry }) => entry.scheduleKey === scheduleKey);
+        const count = attempt.parsed.voteCounts.find((item) => item.kind === kind && item.scheduleKey === scheduleKey);
+        return {
+          entries,
+          count,
+          distance: count ? Math.abs(entries.length - count.expectedCount) : Number.POSITIVE_INFINITY,
+          overflow: count && entries.length > count.expectedCount ? 1 : 0,
+          score: attempt.score,
+        };
+      });
+      const countedCandidates = candidates.filter((candidate) => candidate.count);
+      if (countedCandidates.length === 0) {
+        return attempts.flatMap((attempt) => resolvedEntriesByKind(attempt, kind).filter(({ entry }) => entry.scheduleKey === scheduleKey));
       }
 
-      const rankedAttempts = attempts
-        .map((attempt) => {
-          const entries = entriesByKind(attempt.parsed, kind).filter((entry) => entry.scheduleKey === scheduleKey);
-          return {
-            entries,
-            overflow: entries.length > expectedCount ? 1 : 0,
-            distance: Math.abs(entries.length - expectedCount),
-            score: attempt.score,
-          };
-        })
-        .sort((a, b) => a.distance - b.distance || a.overflow - b.overflow || b.score - a.score);
-
-      return rankedAttempts[0]?.entries ?? [];
-    }),
-  );
+      const selected = countedCandidates.sort((a, b) => a.distance - b.distance || a.overflow - b.overflow || b.score - a.score)[0];
+      if (selected.count) selectedCounts.push(selected.count);
+      return selected.entries;
+    });
+  const seen = new Set<string>();
+  const resolvedEntries = selectedResolvedEntries.filter(({ entry }) => {
+    const key = `${entry.scheduleKey}:${entry.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { entries: uniqueVoteEntries(resolvedEntries.map(({ entry }) => entry)), resolvedEntries, counts: selectedCounts };
 }
 
 export function mergeVoteOcrAttempts(attempts: VoteOcrAttempt[], scoreVoteParse: (parsed: ParseVoteResult) => number): VoteOcrAttempt {
   const bestAttempt = attempts.reduce((best, attempt) => (attempt.score > best.score ? attempt : best), attempts[0]);
-  const voteCounts = uniqueVoteCounts(attempts.flatMap((attempt) => attempt.parsed.voteCounts));
+  const service = mergeKind(attempts, "service");
+  const car = mergeKind(attempts, "car");
+  const voteCounts = [...service.counts, ...car.counts];
   const parsed: ParseVoteResult = {
-    serviceVotes: mergeEntriesByVoteCount(attempts, "service", voteCounts),
-    carVotes: mergeEntriesByVoteCount(attempts, "car", voteCounts),
+    serviceVotes: service.entries,
+    carVotes: car.entries,
     voteCounts,
     detectedMonths: [...new Set(attempts.flatMap((attempt) => attempt.parsed.detectedMonths))],
     unparsedLines: [...new Set(attempts.flatMap((attempt) => attempt.parsed.unparsedLines))],
@@ -79,5 +90,9 @@ export function mergeVoteOcrAttempts(attempts: VoteOcrAttempt[], scoreVoteParse:
     sanitizedRawText: bestAttempt?.sanitizedRawText ?? "",
     parsed,
     score: scoreVoteParse(parsed),
+    resolvedVotes: {
+      serviceVotes: service.resolvedEntries,
+      carVotes: car.resolvedEntries,
+    },
   };
 }

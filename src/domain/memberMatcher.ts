@@ -113,14 +113,19 @@ function resolveByUniqueStandaloneAlias(members: Member[], input: string): strin
   return aliasMatches.length === 1 ? aliasMatches[0].name : undefined;
 }
 
-export function resolveMemberNameFromText(members: Member[], value: string): string | undefined {
+export type MemberTextMatch = {
+  name: string;
+  matchedByAlias: boolean;
+};
+
+export function resolveMemberMatchFromText(members: Member[], value: string): MemberTextMatch | undefined {
   const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
   if (!input) return undefined;
 
   const exactName = members.find(
     (member) => normalizeOcrConfusions(normalizeMemberNameForMatch(member.name)) === input,
   );
-  if (exactName) return exactName.name;
+  if (exactName) return { name: exactName.name, matchedByAlias: false };
 
   const uniqueBaptismalNameSet = uniqueBaptismalNames(members);
   const matches = members
@@ -137,26 +142,70 @@ export function resolveMemberNameFromText(members: Member[], value: string): str
 
   const confident = best.score >= 0.92;
   const fuzzyButClear = best.score >= 0.72 && best.score - (second?.score ?? 0) >= 0.08;
-  if (confident || fuzzyButClear) return best.member.name;
+  if (confident || fuzzyButClear) return { name: best.member.name, matchedByAlias: false };
 
   const suffixMatch = resolveByUniqueNameSuffix(members, value);
-  if (suffixMatch) return suffixMatch;
+  if (suffixMatch) return { name: suffixMatch, matchedByAlias: false };
 
-  return resolveByUniqueStandaloneAlias(members, input);
+  const aliasMatch = resolveByUniqueStandaloneAlias(members, input);
+  return aliasMatch ? { name: aliasMatch, matchedByAlias: true } : undefined;
+}
+
+export function resolveMemberNameFromText(members: Member[], value: string): string | undefined {
+  return resolveMemberMatchFromText(members, value)?.name;
 }
 
 export function resolveMemberNamesFromText(members: Member[], value: string): string[] {
+  return resolveMemberMatchesFromText(members, value).map((match) => match.name);
+}
+
+export function resolveMemberMatchesFromText(members: Member[], value: string): MemberTextMatch[] {
   const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
   if (!input) return [];
 
-  const exactMatches = members
+  const positionedMatches = members
     .map((member) => ({ member, index: input.indexOf(normalizeOcrConfusions(normalizeMemberNameForMatch(member.name))) }))
     .filter(({ index }) => index >= 0)
+    .map(({ member, index }) => ({ match: { name: member.name, matchedByAlias: false }, index }));
+
+  if (positionedMatches.length === 0) {
+    const primaryMatch = resolveMemberMatchFromText(members, value);
+    if (!primaryMatch) return [];
+    if (primaryMatch.matchedByAlias) return [primaryMatch];
+
+    const member = members.find((item) => item.name === primaryMatch.name);
+    const nameIndex = normalizeOcrConfusions(normalizeMemberNameForMatch(member?.name ?? ""));
+    const baptismalIndex = normalizeOcrConfusions(normalizeMemberNameForMatch(member?.baptismalName ?? ""));
+    positionedMatches.push({
+      match: primaryMatch,
+      index: Math.max(0, nameIndex ? input.indexOf(nameIndex) : baptismalIndex ? input.indexOf(baptismalIndex) : 0),
+    });
+  }
+
+  const aliasCounts = new Map<string, number>();
+  members.forEach((member) => {
+    const alias = normalizeOcrConfusions(normalizeMemberNameForMatch(member.alias ?? ""));
+    if (alias) aliasCounts.set(alias, (aliasCounts.get(alias) ?? 0) + 1);
+  });
+  const memberNames = new Set(
+    members.map((member) => normalizeOcrConfusions(normalizeMemberNameForMatch(member.name))).filter(Boolean),
+  );
+  const uniqueBaptismalNameSet = new Set(
+    [...uniqueBaptismalNames(members)].map((name) => normalizeOcrConfusions(name)),
+  );
+  const tokenPattern = /[A-Za-z가-힣]+/g;
+  for (const tokenMatch of value.matchAll(tokenPattern)) {
+    const token = normalizeOcrConfusions(normalizeMemberNameForMatch(tokenMatch[0]));
+    if (memberNames.has(token) || uniqueBaptismalNameSet.has(token)) continue;
+    if (aliasCounts.get(token) !== 1) continue;
+    const member = members.find(
+      (item) => normalizeOcrConfusions(normalizeMemberNameForMatch(item.alias ?? "")) === token,
+    );
+    if (member) positionedMatches.push({ match: { name: member.name, matchedByAlias: true }, index: tokenMatch.index ?? 0 });
+  }
+
+  return positionedMatches
     .sort((a, b) => a.index - b.index)
-    .map(({ member }) => member.name);
-
-  if (exactMatches.length > 0) return [...new Set(exactMatches)];
-
-  const matchedName = resolveMemberNameFromText(members, value);
-  return matchedName ? [matchedName] : [];
+    .map(({ match }) => match)
+    .filter((match, index, matches) => matches.findIndex((item) => item.name === match.name) === index);
 }

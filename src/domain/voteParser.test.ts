@@ -120,6 +120,16 @@ describe("parseVoteText", () => {
     ]);
   });
 
+  it("관리장님 예상 인원과 관계없이 특수 차량 투표를 유지한다", () => {
+    const settings = createDefaultSettings("2026-03");
+    const result = parseVoteText("3/29 (일) 관리장님 : 2명", settings.serviceSchedules, settings.carSchedules, 2026);
+
+    expect(result.voteCounts[0]?.expectedCount).toBe(2);
+    expect(result.carVotes).toEqual([
+      { scheduleKey: "2026-03-29 09:40", displayText: "3/29 (일) 09:40", name: "관리장님", source: "ocr" },
+    ]);
+  });
+
   it("splits comma separated manager car lines even when the line has no time", () => {
     const settings = createDefaultSettings("2026-03");
     const result = parseVoteText(

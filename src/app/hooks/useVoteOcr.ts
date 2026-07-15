@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import type { PSM as PsmValue } from "tesseract.js";
-import { resolveMemberNamesFromText } from "../../domain/memberMatcher";
+import type { PSM as PsmValue, Worker } from "tesseract.js";
+import { resolveMemberMatchesFromText } from "../../domain/memberMatcher";
 import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain/scheduleTypes";
+import { rebalanceAliasVotes, type OcrResolvedVoteEntry } from "../../domain/voteAliasRebalance";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse } from "../appUtils";
 
-function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): VoteEntry[] {
+function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): OcrResolvedVoteEntry[] {
   return entries.flatMap((entry) => {
-    if (entry.name === "관리장님") return [entry];
-    return resolveMemberNamesFromText(members, entry.name).map((memberName) => ({ ...entry, name: memberName }));
+    if (entry.name === "관리장님") return [{ entry, matchedByAlias: false }];
+    return resolveMemberMatchesFromText(members, entry.name).map((match) => ({
+      entry: { ...entry, name: match.name },
+      matchedByAlias: match.matchedByAlias,
+    }));
   });
 }
 
-function uniqueVotesByScheduleAndName(entries: VoteEntry[]): VoteEntry[] {
+function uniqueVotesByScheduleAndName(entries: OcrResolvedVoteEntry[]): OcrResolvedVoteEntry[] {
   const seen = new Set<string>();
-  return entries.filter((entry) => {
+  return entries.filter(({ entry }) => {
     const dedupeKey = `${entry.scheduleKey}:${entry.name}`;
     if (seen.has(dedupeKey)) return false;
     seen.add(dedupeKey);
@@ -64,9 +68,13 @@ export function useVoteOcr({
     const sanitizedRawText = sanitizeVoteOcrText(rawText);
     const fallbackYear = Number(month.slice(0, 4));
     const parsed = parseVoteText(sanitizedRawText, settings.serviceSchedules, settings.carSchedules, fallbackYear);
-    const filteredParsed = {
+    const resolvedVotes = {
       serviceVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.serviceVotes, members)),
       carVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.carVotes, members)),
+    };
+    const filteredParsed = {
+      serviceVotes: resolvedVotes.serviceVotes.map(({ entry }) => entry),
+      carVotes: resolvedVotes.carVotes.map(({ entry }) => entry),
       voteCounts: parsed.voteCounts,
       detectedMonths: parsed.detectedMonths,
       unparsedLines: parsed.unparsedLines,
@@ -78,18 +86,24 @@ export function useVoteOcr({
       sanitizedRawText,
       parsed: filteredParsed,
       score: scoreVoteParse(filteredParsed),
+      resolvedVotes,
     };
   }
 
   function applyVoteOcrAttempt(bestAttempt: VoteOcrAttempt) {
     const mismatchedMonths = bestAttempt.parsed.detectedMonths.filter((detectedMonth) => detectedMonth !== month);
     const hasMonthMismatch = mismatchedMonths.length > 0;
+    const resolvedVotes = bestAttempt.resolvedVotes ?? {
+      serviceVotes: bestAttempt.parsed.serviceVotes.map((entry) => ({ entry, matchedByAlias: false })),
+      carVotes: bestAttempt.parsed.carVotes.map((entry) => ({ entry, matchedByAlias: false })),
+    };
+    const rebalanced = rebalanceAliasVotes({ ...resolvedVotes, voteCounts: bestAttempt.parsed.voteCounts });
     const next = {
       ...votes,
       month,
       rawText: bestAttempt.sanitizedRawText,
-      serviceVotes: hasMonthMismatch ? [] : bestAttempt.parsed.serviceVotes,
-      carVotes: hasMonthMismatch ? [] : bestAttempt.parsed.carVotes,
+      serviceVotes: hasMonthMismatch ? [] : rebalanced.serviceVotes.map(({ entry }) => entry),
+      carVotes: hasMonthMismatch ? [] : rebalanced.carVotes.map(({ entry }) => entry),
     };
     setVoteConversionError(
       hasMonthMismatch
@@ -100,29 +114,16 @@ export function useVoteOcr({
   }
 
   async function recognizeVoteImage(
+    worker: Worker,
     image: Blob,
     mode: { label: string; psm: PsmValue },
-    onProgress: (progress: number) => void,
   ): Promise<VoteOcrAttempt> {
-    const { createWorker } = await import("tesseract.js");
-    const worker = await createWorker("kor+eng", undefined, {
-      logger: (message) => {
-        if (message.status === "recognizing text") {
-          onProgress(message.progress);
-        }
-      },
+    await worker.setParameters({
+      tessedit_pageseg_mode: mode.psm,
+      preserve_interword_spaces: "1",
     });
-
-    try {
-      await worker.setParameters({
-        tessedit_pageseg_mode: mode.psm,
-        preserve_interword_spaces: "1",
-      });
-      const result = await worker.recognize(image);
-      return parseVoteAttempt(mode.label, result.data.text.trim());
-    } finally {
-      await worker.terminate();
-    }
+    const result = await worker.recognize(image);
+    return parseVoteAttempt(mode.label, result.data.text.trim());
   }
 
   async function convertVoteImage(file: File) {
@@ -134,24 +135,35 @@ export function useVoteOcr({
 
     try {
       if (file.size > 15 * 1024 * 1024) throw new Error("image-too-large");
-      const preparedImage = await prepareImageForOcr(file);
+      const preparedImages = await prepareImageForOcr(file);
       if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(10);
-      const { PSM } = await import("tesseract.js");
-      const ocrProgress: Record<string, number> = { "PSM 6": 0, "PSM 11": 0 };
+      const { createWorker, PSM } = await import("tesseract.js");
+      const ocrProgress: Record<string, number> = { "이진 PSM 6": 0, "명암 PSM 11": 0 };
+      let activeLabel = "이진 PSM 6";
       const updateCombinedProgress = (label: string, progress: number) => {
         ocrProgress[label] = Math.max(ocrProgress[label] ?? 0, progress);
-        const averageOcrProgress = (ocrProgress["PSM 6"] + ocrProgress["PSM 11"]) / 2;
+        const averageOcrProgress = (ocrProgress["이진 PSM 6"] + ocrProgress["명암 PSM 11"]) / 2;
         if (requestId === requestIdRef.current) setVoteConversionProgress(Math.min(95, Math.round(10 + averageOcrProgress * 85)));
       };
-      const attempts = [];
-      attempts.push(await recognizeVoteImage(preparedImage, { label: "PSM 6", psm: PSM.SINGLE_BLOCK }, (progress) => updateCombinedProgress("PSM 6", progress)));
-      if (requestId !== requestIdRef.current) return;
-      attempts.push(await recognizeVoteImage(preparedImage, { label: "PSM 11", psm: PSM.SPARSE_TEXT }, (progress) => updateCombinedProgress("PSM 11", progress)));
-      if (requestId !== requestIdRef.current) return;
-      const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
-      applyVoteOcrAttempt(bestAttempt);
-      setVoteConversionProgress(100);
+      const worker = await createWorker("kor+eng", undefined, {
+        logger: (message) => {
+          if (message.status === "recognizing text") updateCombinedProgress(activeLabel, message.progress);
+        },
+      });
+      try {
+        const attempts = [];
+        attempts.push(await recognizeVoteImage(worker, preparedImages.binary, { label: activeLabel, psm: PSM.SINGLE_BLOCK }));
+        if (requestId !== requestIdRef.current) return;
+        activeLabel = "명암 PSM 11";
+        attempts.push(await recognizeVoteImage(worker, preparedImages.grayscale, { label: activeLabel, psm: PSM.SPARSE_TEXT }));
+        if (requestId !== requestIdRef.current) return;
+        const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
+        applyVoteOcrAttempt(bestAttempt);
+        setVoteConversionProgress(100);
+      } finally {
+        await worker.terminate();
+      }
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(0);

@@ -1,6 +1,7 @@
 import dayjs, { type Dayjs } from "dayjs";
 import type { ParseVoteResult } from "../domain/voteParser";
 import type { ScheduleSettings } from "../domain/scheduleTypes";
+import { calculateOcrDimensions, createOcrPixelVariant } from "../domain/ocrImageProcessing";
 
 export function currentMonth(): string {
   const now = new Date();
@@ -55,17 +56,16 @@ export function issueCounts(issues: Array<{ severity: string }>): { errors: numb
   };
 }
 
-export async function prepareImageForOcr(file: File): Promise<Blob> {
+export async function prepareImageForOcr(file: File): Promise<{ binary: Blob; grayscale: Blob }> {
   const image = await createImageBitmap(file);
-  const maxPixels = 12_000_000;
-  const scale = Math.min(1, Math.sqrt(maxPixels / (image.width * image.height)));
+  const dimensions = calculateOcrDimensions(image.width, image.height);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * scale));
-  canvas.height = Math.max(1, Math.round(image.height * scale));
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
 
   try {
     const context = canvas.getContext("2d");
-    if (!context) return file;
+    if (!context) return { binary: file, grayscale: file };
 
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -73,21 +73,17 @@ export async function prepareImageForOcr(file: File): Promise<Blob> {
   context.imageSmoothingQuality = "high";
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-  const { data } = imageData;
-  for (let i = 0; i < data.length; i += 4) {
-    const brightness = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    const value = brightness > 175 ? 255 : 0;
-    data[i] = value;
-    data[i + 1] = value;
-    data[i + 2] = value;
-    data[i + 3] = 255;
-  }
-  context.putImageData(imageData, 0, 0);
-
-    return await new Promise((resolve) => {
-      canvas.toBlob((blob) => resolve(blob ?? file), "image/png");
-    });
+    const variantToBlob = async (kind: "binary" | "grayscale"): Promise<Blob> => {
+      const source = context.getImageData(0, 0, canvas.width, canvas.height);
+      const pixels = createOcrPixelVariant(source.data, kind);
+      source.data.set(pixels);
+      context.putImageData(source, 0, 0);
+      return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob ?? file), "image/png"));
+    };
+    const binary = await variantToBlob("binary");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const grayscale = await variantToBlob("grayscale");
+    return { binary, grayscale };
   } finally {
     image.close();
   }
@@ -103,5 +99,15 @@ export function sanitizeVoteOcrText(text: string): string {
 }
 
 export function scoreVoteParse(parsed: ParseVoteResult): number {
-  return (parsed.serviceVotes.length + parsed.carVotes.length) * 10 - parsed.unparsedLines.length * 2;
+  const entries = [...parsed.serviceVotes, ...parsed.carVotes];
+  const uniqueCounts = parsed.voteCounts.filter((count, index, counts) =>
+    counts.findIndex((candidate) => candidate.kind === count.kind && candidate.scheduleKey === count.scheduleKey) === index,
+  );
+  const countScore = uniqueCounts.reduce((score, count) => {
+    const kindEntries = count.kind === "service" ? parsed.serviceVotes : parsed.carVotes;
+    const actual = kindEntries.filter((entry) => entry.scheduleKey === count.scheduleKey).length;
+    const distance = Math.abs(actual - count.expectedCount);
+    return score + (distance === 0 ? 30 : 0) - distance * 15 - (actual > count.expectedCount ? 25 : 0);
+  }, 0);
+  return entries.length * 10 + countScore - parsed.unparsedLines.length * 5;
 }

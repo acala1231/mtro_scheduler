@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveMemberNameFromText, resolveMemberNamesFromText } from "./memberMatcher";
+import { resolveMemberMatchesFromText, resolveMemberMatchFromText, resolveMemberNameFromText, resolveMemberNamesFromText } from "./memberMatcher";
 import type { Member } from "./scheduleTypes";
 
 const members: Member[] = [
@@ -84,6 +84,8 @@ describe("resolveMemberNameFromText", () => {
     expect(resolveMemberNameFromText(members, "H")).toBe("윤마루");
     expect(resolveMemberNameFromText(members, "  h  ")).toBe("윤마루");
     expect(resolveMemberNamesFromText(members, " H ")).toEqual(["윤마루"]);
+    expect(resolveMemberMatchFromText(members, " H ")).toEqual({ name: "윤마루", matchedByAlias: true });
+    expect(resolveMemberMatchFromText(members, "윤마루")).toEqual({ name: "윤마루", matchedByAlias: false });
   });
 
   it("별칭이 없으면 매핑하지 않는다", () => {
@@ -119,5 +121,29 @@ describe("resolveMemberNameFromText", () => {
     );
 
     expect(resolveMemberNameFromText(membersWithConflictingAlias, "권다현")).toBe("권다현");
+    expect(resolveMemberMatchesFromText(membersWithConflictingAlias, "권다현")).toEqual([
+      { name: "권다현", matchedByAlias: false },
+    ]);
+  });
+
+  it("별칭이 다른 회원의 고유 세례명과 충돌하면 세례명 회원만 반환한다", () => {
+    const membersWithConflictingAlias = members.map((member) =>
+      member.name === "윤마루" ? { ...member, alias: "감마" } : member,
+    );
+
+    expect(resolveMemberMatchesFromText(membersWithConflictingAlias, "감마")).toEqual([
+      { name: "최대현", matchedByAlias: false },
+    ]);
+  });
+
+  it("한 OCR 문자열의 회원 이름과 독립 별칭을 위치 순서대로 함께 추출한다", () => {
+    expect(resolveMemberMatchesFromText(members, "문라온 엡실... H")).toEqual([
+      { name: "문라온", matchedByAlias: false },
+      { name: "윤마루", matchedByAlias: true },
+    ]);
+    expect(resolveMemberMatchesFromText(members, "감마 안내문 H")).toEqual([
+      { name: "최대현", matchedByAlias: false },
+      { name: "윤마루", matchedByAlias: true },
+    ]);
   });
 });
