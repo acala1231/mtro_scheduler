@@ -27,6 +27,7 @@ function completeMember(patch: Partial<Member>): Member {
     id: crypto.randomUUID(),
     name: String(patch.name ?? "").trim(),
     baptismalName: String(patch.baptismalName ?? "").trim(),
+    alias: String(patch.alias ?? "").trim(),
     roles: Object.fromEntries(BASE_ROLES.map((role) => [role, Boolean(patch.roles?.[role])])) as Member["roles"],
     counts: patch.counts ?? emptyMemberCounts(),
   };
@@ -36,6 +37,9 @@ function mergeMember(currentMember: Member, patch: Partial<Member>): Member {
   return {
     ...currentMember,
     ...patch,
+    name: patch.name === undefined ? currentMember.name : String(patch.name).trim(),
+    baptismalName: patch.baptismalName === undefined ? currentMember.baptismalName : String(patch.baptismalName).trim(),
+    alias: patch.alias === undefined ? currentMember.alias : String(patch.alias).trim(),
     roles: patch.roles ? { ...currentMember.roles, ...patch.roles } : currentMember.roles,
     counts: patch.counts ? { ...currentMember.counts, ...patch.counts } : currentMember.counts,
   };
@@ -189,7 +193,7 @@ export function useMembers({
     const query = memberQuery.trim();
     return (membersFile?.members ?? [])
       .map((member, index) => ({ key: memberKey(member, index), index, member }))
-      .filter(({ member }) => member.name.includes(query));
+      .filter(({ member }) => [member.name, member.baptismalName, member.alias].some((value) => value?.includes(query)));
   }
 
   return {

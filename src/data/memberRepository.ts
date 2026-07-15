@@ -17,6 +17,7 @@ function normalizeMember(raw: Partial<Member>, options: { preserveCounts: boolea
     id: typeof raw.id === "string" && raw.id.trim() ? raw.id : crypto.randomUUID(),
     name: String(raw.name ?? "").trim(),
     baptismalName: String(raw.baptismalName ?? "").trim(),
+    alias: String(raw.alias ?? "").trim(),
     roles,
     counts,
   };

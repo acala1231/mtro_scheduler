@@ -106,6 +106,7 @@ export function membersFromCsv(text: string): Partial<Member>[] {
   const indexes = new Map(header.map((column, index) => [column.trim(), index]));
   const nameIndex = indexes.get("이름") ?? indexes.get("name");
   const baptismalNameIndex = indexes.get("세례명") ?? indexes.get("baptismalName");
+  const aliasIndex = indexes.get("별칭") ?? indexes.get("alias");
 
   if (nameIndex === undefined) {
     throw new Error("명단 파일에 이름 열이 필요합니다.");
@@ -114,6 +115,7 @@ export function membersFromCsv(text: string): Partial<Member>[] {
   return body.map((row) => ({
     name: restoreFormulaSafeCell(row[nameIndex] ?? ""),
     baptismalName: restoreFormulaSafeCell(row[baptismalNameIndex ?? -1] ?? ""),
+    alias: restoreFormulaSafeCell(row[aliasIndex ?? -1] ?? ""),
     roles: {
       정: parseBoolean(row[indexes.get("정") ?? -1] ?? ""),
       부: parseBoolean(row[indexes.get("부") ?? -1] ?? ""),

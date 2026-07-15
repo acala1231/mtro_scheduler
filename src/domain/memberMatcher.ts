@@ -106,9 +106,21 @@ function resolveByUniqueNameSuffix(members: Member[], value: string): string | u
   return matchedMember?.name;
 }
 
+function resolveByUniqueStandaloneAlias(members: Member[], input: string): string | undefined {
+  const aliasMatches = members.filter(
+    (member) => normalizeOcrConfusions(normalizeMemberNameForMatch(member.alias ?? "")) === input,
+  );
+  return aliasMatches.length === 1 ? aliasMatches[0].name : undefined;
+}
+
 export function resolveMemberNameFromText(members: Member[], value: string): string | undefined {
   const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
   if (!input) return undefined;
+
+  const exactName = members.find(
+    (member) => normalizeOcrConfusions(normalizeMemberNameForMatch(member.name)) === input,
+  );
+  if (exactName) return exactName.name;
 
   const uniqueBaptismalNameSet = uniqueBaptismalNames(members);
   const matches = members
@@ -127,7 +139,10 @@ export function resolveMemberNameFromText(members: Member[], value: string): str
   const fuzzyButClear = best.score >= 0.72 && best.score - (second?.score ?? 0) >= 0.08;
   if (confident || fuzzyButClear) return best.member.name;
 
-  return resolveByUniqueNameSuffix(members, value);
+  const suffixMatch = resolveByUniqueNameSuffix(members, value);
+  if (suffixMatch) return suffixMatch;
+
+  return resolveByUniqueStandaloneAlias(members, input);
 }
 
 export function resolveMemberNamesFromText(members: Member[], value: string): string[] {

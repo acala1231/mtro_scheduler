@@ -29,10 +29,11 @@ describe("memberCsv", () => {
     expect(membersFromCsv(membersToCsv(members))[0].name).toBe(name);
   });
   it("parses Korean member CSV headers", () => {
-    expect(membersFromCsv("이름,세례명,정,부,향,향합\n홍길동,베드로,true,false,예,\n")).toEqual([
+    expect(membersFromCsv("이름,세례명,별칭,정,부,향,향합\n홍길동,베드로,길동이,true,false,예,\n")).toEqual([
       {
         name: "홍길동",
         baptismalName: "베드로",
+        alias: "길동이",
         roles: {
           정: true,
           부: false,
@@ -48,6 +49,7 @@ describe("memberCsv", () => {
       {
         name: "홍길동",
         baptismalName: "베드로",
+        alias: "H",
         roles: { 정: true, 부: false, 향: true, 향합: false },
         counts: { 전체: 0, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
       },
@@ -56,10 +58,32 @@ describe("memberCsv", () => {
     expect(membersToCsv(members)).toBe("이름,세례명,정,부,향,향합\n홍길동,베드로,true,false,true,false\n");
   });
 
+  it("별칭은 내보내기에 포함하지 않는다", () => {
+    const members: Member[] = [
+      {
+        name: "홍길동",
+        baptismalName: "베드로",
+        alias: "길동이",
+        roles: { 정: true, 부: false, 향: true, 향합: false },
+        counts: { 전체: 0, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
+      },
+    ];
+
+    const csv = membersToCsv(members);
+    expect(csv).not.toContain("별칭");
+    expect(csv).not.toContain("길동이");
+  });
+
+  it("alias 영문 헤더와 별칭 없는 기존 CSV를 모두 지원한다", () => {
+    expect(membersFromCsv("name,baptismalName,alias\n홍성은,사무엘,H\n")[0]).toMatchObject({ alias: "H" });
+    expect(membersFromCsv("이름,세례명\n홍길동,베드로\n")[0]).toMatchObject({ alias: "" });
+  });
+
   it("스프레드시트 수식으로 해석될 수 있는 셀을 중화한다", () => {
     const members: Member[] = [{
       name: "=HYPERLINK(\"https://example.com\")",
       baptismalName: "+cmd",
+      alias: "@alias",
       roles: { 정: true, 부: false, 향: false, 향합: false },
       counts: { 전체: 0, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
     }];

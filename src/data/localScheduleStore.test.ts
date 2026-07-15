@@ -50,6 +50,17 @@ describe("localScheduleStore", () => {
     expect(loadSnapshot("2026-07").result).toBeUndefined();
   });
 
+  it("결과 명단의 선택적 별칭 문자열을 허용한다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 2, month: "2026-07", updatedAt: "now",
+      result: {
+        generatedAt: "now", serviceRows: [], carRows: [], issues: [],
+        updatedMembers: [{ name: "홍성은", baptismalName: "사무엘", alias: "H", roles: { 정: true }, counts: { 전체: 0 } }],
+      },
+    }));
+    expect(loadSnapshot("2026-07").result?.updatedMembers[0].alias).toBe("H");
+  });
+
   it("쓰기 실패를 throw하지 않고 false로 알린다", () => {
     vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error("quota"); });
     expect(saveSnapshot({ version: 2, month: "2026-07", updatedAt: "now" })).toBe(false);

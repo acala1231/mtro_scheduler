@@ -4,7 +4,7 @@ import { BASE_ROLES, type BaseRole, type CountRole, type Member } from "../../do
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { ActionMenu } from "./ActionMenu";
 
-export type MemberDraft = Pick<Member, "name" | "baptismalName" | "roles">;
+export type MemberDraft = Pick<Member, "name" | "baptismalName" | "alias" | "roles">;
 
 const OPTIONAL_COUNT_ROLES: CountRole[] = ["정", "부", "향", "향합", "초1", "초2", "십자가", "차량"];
 
@@ -12,6 +12,7 @@ function createMemberDraft(member: Member): MemberDraft {
   return {
     name: member.name,
     baptismalName: member.baptismalName,
+    alias: member.alias,
     roles: { ...member.roles },
   };
 }
@@ -89,14 +90,23 @@ export function MemberCard({
             <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
               {isEditing ? (
                 <Grid container spacing={1}>
-                  <Grid size={{ xs: 12, md: 6 }}>
+                  <Grid size={{ xs: 12, md: 4 }}>
                     <TextField label="이름" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} fullWidth size="small" />
                   </Grid>
-                  <Grid size={{ xs: 12, md: 6 }}>
+                  <Grid size={{ xs: 12, md: 4 }}>
                     <TextField
                       label="세례명"
                       value={draft.baptismalName ?? ""}
                       onChange={(event) => updateDraft({ baptismalName: event.target.value })}
+                      fullWidth
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      label="별칭"
+                      value={draft.alias ?? ""}
+                      onChange={(event) => updateDraft({ alias: event.target.value })}
                       fullWidth
                       size="small"
                     />
@@ -108,6 +118,11 @@ export function MemberCard({
                   {member.baptismalName && (
                     <Typography variant="body2" color="text.secondary">
                       {member.baptismalName}
+                    </Typography>
+                  )}
+                  {member.alias && (
+                    <Typography variant="body2" color="text.secondary">
+                      {member.alias}
                     </Typography>
                   )}
                 </Stack>
