@@ -99,4 +99,51 @@ describe("generateSchedule", () => {
     expect(result.carRows[0].name).toBe("홍길동");
     expect(result.serviceRows[0].roles["정"]).toBe("홍길동");
   });
+
+  it("assigns base roles in incense, incense boat, lead, assistant order", () => {
+    const members: Member[] = [
+      {
+        name: "우선배정",
+        roles: { 정: true, 부: true, 향: true, 향합: true },
+        counts: { 전체: 0, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
+      },
+      {
+        name: "두번째",
+        roles: { 정: true, 부: true, 향: true, 향합: true },
+        counts: { 전체: 10, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
+      },
+      {
+        name: "세번째",
+        roles: { 정: true, 부: true, 향: true, 향합: true },
+        counts: { 전체: 20, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
+      },
+      {
+        name: "네번째",
+        roles: { 정: true, 부: true, 향: true, 향합: true },
+        counts: { 전체: 30, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },
+      },
+    ];
+
+    const result = generateSchedule({
+      members,
+      serviceSchedules: [
+        {
+          key: "2026-07-19 10:30",
+          date: "2026-07-19",
+          time: "10:30",
+          displayDate: "7/19 (일) 10:30",
+          baseRoles: ["정", "부", "향", "향합"],
+          subRoles: [],
+        },
+      ],
+      carSchedules: [],
+      serviceVotes: members.map((member) => ({ scheduleKey: "2026-07-19 10:30", name: member.name })),
+      carVotes: [],
+    });
+
+    expect(result.serviceRows[0].roles["향"]).toBe("우선배정");
+    expect(result.serviceRows[0].roles["향합"]).toBe("두번째");
+    expect(result.serviceRows[0].roles["정"]).toBe("세번째");
+    expect(result.serviceRows[0].roles["부"]).toBe("네번째");
+  });
 });

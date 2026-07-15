@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import { generateSchedule } from "../../domain/assignmentEngine";
+import { recalculateResultMembers } from "../../domain/resultMembers";
 import {
   createCarSchedule,
   createDefaultSettings,
@@ -106,17 +107,37 @@ export function useScheduleResult({
 
   function updateServiceResult(rowIndex: number, row: ScheduleResultRow) {
     if (!result) return;
-    updateResult({
+    const nextResult = {
       ...result,
       serviceRows: result.serviceRows.map((currentRow, index) => (index === rowIndex ? row : currentRow)),
+    };
+
+    updateResult({
+      ...nextResult,
+      updatedMembers: recalculateResultMembers({
+        sourceMembers,
+        serviceSchedules: settings.serviceSchedules,
+        carSchedules: settings.carSchedules,
+        result: nextResult,
+      }),
     });
   }
 
   function updateCarResult(rowIndex: number, row: CarResultRow) {
     if (!result) return;
-    updateResult({
+    const nextResult = {
       ...result,
       carRows: result.carRows.map((currentRow, index) => (index === rowIndex ? row : currentRow)),
+    };
+
+    updateResult({
+      ...nextResult,
+      updatedMembers: recalculateResultMembers({
+        sourceMembers,
+        serviceSchedules: settings.serviceSchedules,
+        carSchedules: settings.carSchedules,
+        result: nextResult,
+      }),
     });
   }
 

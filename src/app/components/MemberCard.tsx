@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Button, Card, CardContent, Chip, Grid, Stack, TextField, Typography } from "@mui/material";
-import { BASE_ROLES, type BaseRole, type Member } from "../../domain/scheduleTypes";
+import { Box, Button, Card, CardContent, Chip, Divider, Grid, Stack, TextField, Typography } from "@mui/material";
+import { BASE_ROLES, type BaseRole, type CountRole, type Member } from "../../domain/scheduleTypes";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { ActionMenu } from "./ActionMenu";
 
 export type MemberDraft = Pick<Member, "name" | "baptismalName" | "roles">;
+
+const OPTIONAL_COUNT_ROLES: CountRole[] = ["정", "부", "향", "향합", "초1", "초2", "십자가", "차량"];
 
 function createMemberDraft(member: Member): MemberDraft {
   return {
@@ -12,6 +14,14 @@ function createMemberDraft(member: Member): MemberDraft {
     baptismalName: member.baptismalName,
     roles: { ...member.roles },
   };
+}
+
+function countLabel(role: CountRole, count: number) {
+  return `${role} ${count}`;
+}
+
+function totalAssignmentCount(member: Member) {
+  return OPTIONAL_COUNT_ROLES.reduce((sum, role) => sum + member.counts[role], 0);
 }
 
 export function MemberCard({
@@ -127,9 +137,19 @@ export function MemberCard({
               />
             ))}
           </Stack>
-          <Typography variant="body2" color="text.secondary">
-            전체 {member.counts["전체"]} · 차량 {member.counts["차량"]}
-          </Typography>
+          <Box sx={{ py: 1.25 }}>
+            <Divider />
+          </Box>
+          <Stack spacing={0.75}>
+            <Typography variant="caption" color="text.secondary">
+              이번 달 배정 횟수 총 {totalAssignmentCount(member)}회
+            </Typography>
+            <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
+              {OPTIONAL_COUNT_ROLES.filter((role) => member.counts[role] > 0).map((role) => (
+                <Chip key={role} label={countLabel(role, member.counts[role])} size="small" variant="outlined" />
+              ))}
+            </Stack>
+          </Stack>
           <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 1 }}>
             {isEditing ? (
               <>

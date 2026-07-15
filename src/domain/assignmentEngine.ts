@@ -2,6 +2,7 @@ import { BASE_ROLES, SUB_ROLES, type BaseRole, type GenerateScheduleInput, type 
 import { makeDateKeyFromScheduleKey } from "./dateTime";
 
 const SPECIAL_CAR_MEMBER = "관리장님";
+const BASE_ROLE_ASSIGNMENT_ORDER: BaseRole[] = ["향", "향합", "정", "부"];
 
 function cloneMembers(members: Member[]): Member[] {
   return members.map((member) => ({
@@ -39,6 +40,10 @@ function uniqueVotes(entries: VoteEntry[], memberMap: Map<string, Member>, issue
 
 function randomTieBreakers(members: Member[]): Map<string, number> {
   return new Map(members.map((member) => [member.name, Math.random()]));
+}
+
+function orderedBaseRoles(baseRoles: BaseRole[]): BaseRole[] {
+  return BASE_ROLE_ASSIGNMENT_ORDER.filter((role) => baseRoles.includes(role));
 }
 
 export function generateSchedule(input: GenerateScheduleInput): GenerateScheduleResult {
@@ -99,7 +104,7 @@ export function generateSchedule(input: GenerateScheduleInput): GenerateSchedule
       const used = new Set<string>();
       const carName = assignCar(carByDateKey.get(makeDateKeyFromScheduleKey(schedule.key)));
 
-      schedule.baseRoles.forEach((role: BaseRole) => {
+      orderedBaseRoles(schedule.baseRoles).forEach((role) => {
         const candidates = availableNames
           .map((name) => memberMap.get(name))
           .filter((member): member is Member => Boolean(member))

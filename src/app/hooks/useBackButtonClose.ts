@@ -1,16 +1,52 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type MutableRefObject } from "react";
 
-const openPopupStack: string[] = [];
+type PopupEntry = {
+  id: string;
+  onCloseRef: MutableRefObject<() => void>;
+  isRegisteredRef: MutableRefObject<boolean>;
+  isClosingByHistoryRef: MutableRefObject<boolean>;
+};
+
+const openPopupStack: PopupEntry[] = [];
+let listenerInstalled = false;
+let ignoreNextPopupPopState = false;
 
 function removePopup(id: string) {
-  const index = openPopupStack.lastIndexOf(id);
-  if (index >= 0) {
-    openPopupStack.splice(index, 1);
+  for (let index = openPopupStack.length - 1; index >= 0; index -= 1) {
+    if (openPopupStack[index].id === id) {
+      openPopupStack.splice(index, 1);
+      return;
+    }
   }
 }
 
-function topPopupId() {
+function topPopup() {
   return openPopupStack[openPopupStack.length - 1];
+}
+
+function handlePopState() {
+  if (ignoreNextPopupPopState) {
+    ignoreNextPopupPopState = false;
+    return;
+  }
+
+  const entry = topPopup();
+  if (!entry) return;
+
+  entry.isClosingByHistoryRef.current = true;
+  entry.isRegisteredRef.current = false;
+  removePopup(entry.id);
+  entry.onCloseRef.current();
+  window.setTimeout(() => {
+    entry.isClosingByHistoryRef.current = false;
+  }, 0);
+}
+
+function ensurePopStateListener() {
+  if (listenerInstalled) return;
+
+  window.addEventListener("popstate", handlePopState);
+  listenerInstalled = true;
 }
 
 export function useBackButtonClose(open: boolean, onClose: () => void) {
@@ -23,32 +59,17 @@ export function useBackButtonClose(open: boolean, onClose: () => void) {
   onCloseRef.current = onClose;
 
   useEffect(() => {
-    const handlePopState = () => {
-      if (!isRegisteredRef.current || topPopupId() !== id) return;
+    ensurePopStateListener();
 
-      isClosingByHistoryRef.current = true;
-      isRegisteredRef.current = false;
-      removePopup(id);
-      onCloseRef.current();
-      window.setTimeout(() => {
-        isClosingByHistoryRef.current = false;
-      }, 0);
-    };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [id]);
-
-  useEffect(() => {
     if (open && !isRegisteredRef.current) {
-      openPopupStack.push(id);
+      openPopupStack.push({ id, onCloseRef, isRegisteredRef, isClosingByHistoryRef });
       isRegisteredRef.current = true;
       window.history.pushState({ popupId: id }, "", window.location.href);
       return;
     }
 
     if (!open && isRegisteredRef.current) {
-      const wasTopPopup = topPopupId() === id;
+      const wasTopPopup = topPopup()?.id === id;
       isRegisteredRef.current = false;
       removePopup(id);
 
@@ -58,6 +79,7 @@ export function useBackButtonClose(open: boolean, onClose: () => void) {
       }
 
       if (wasTopPopup && !isClosingByHistoryRef.current) {
+        ignoreNextPopupPopState = true;
         window.history.back();
       }
     }
