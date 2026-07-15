@@ -18,6 +18,8 @@ export const COUNT_ROLES: CountRole[] = [
 ];
 
 export type Member = {
+  /** v2부터 저장 시 부여되는 안정 식별자. 기존 in-memory fixture 호환을 위해 선택적이다. */
+  id?: string;
   name: string;
   baptismalName?: string;
   roles: Record<BaseRole, boolean>;

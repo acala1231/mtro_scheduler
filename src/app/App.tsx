@@ -69,6 +69,7 @@ export function App() {
     settings,
     votes,
     result,
+    savedState,
     setSavedState,
     updateSettings,
     updateVotes,
@@ -222,6 +223,9 @@ export function App() {
               <Typography variant="body2" color="text.secondary" noWrap>
                 {monthTitle(month)}
               </Typography>
+              <Typography variant="caption" color={savedState === "저장 실패" ? "error" : "text.secondary"} role="status" aria-live="polite">
+                {savedState}
+              </Typography>
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", ml: "auto" }}>
               <IconButton edge="end" color="primary" aria-label="화면 메뉴 열기" onClick={(event) => setMenuAnchor(event.currentTarget)}>
@@ -303,6 +307,7 @@ export function App() {
             <GenerateScreen
               month={month}
               settings={settings}
+              members={sourceMembers}
               result={result}
               allIssues={allIssues}
               errorCount={counts.errors}

@@ -8,12 +8,14 @@ export type VisibleMember = {
   member: Member;
 };
 
+const MEMBERS_SAVE_ERROR = "명단을 저장하지 못했습니다. 저장 공간과 브라우저 설정을 확인해 주세요.";
+
 function memberKey(member: Member, index: number) {
-  return `${index}:${member.name}:${member.baptismalName ?? ""}`;
+  return member.id ?? `${index}:${member.name}:${member.baptismalName ?? ""}`;
 }
 
 function duplicateMemberKey(member: Pick<Member, "name" | "baptismalName">) {
-  return `${member.name.trim()}:${(member.baptismalName ?? "").trim()}`;
+  return member.name.trim();
 }
 
 function emptyMemberCounts(): Member["counts"] {
@@ -22,10 +24,20 @@ function emptyMemberCounts(): Member["counts"] {
 
 function completeMember(patch: Partial<Member>): Member {
   return {
+    id: crypto.randomUUID(),
     name: String(patch.name ?? "").trim(),
     baptismalName: String(patch.baptismalName ?? "").trim(),
     roles: Object.fromEntries(BASE_ROLES.map((role) => [role, Boolean(patch.roles?.[role])])) as Member["roles"],
     counts: patch.counts ?? emptyMemberCounts(),
+  };
+}
+
+function mergeMember(currentMember: Member, patch: Partial<Member>): Member {
+  return {
+    ...currentMember,
+    ...patch,
+    roles: patch.roles ? { ...currentMember.roles, ...patch.roles } : currentMember.roles,
+    counts: patch.counts ? { ...currentMember.counts, ...patch.counts } : currentMember.counts,
   };
 }
 
@@ -66,7 +78,7 @@ export function useMembers({
 
     try {
       const nextMembersFile = await parseMembersCsvFile(file);
-      saveStoredMembers(nextMembersFile);
+      if (!saveStoredMembers(nextMembersFile)) throw new Error(MEMBERS_SAVE_ERROR);
       setSourceMembersFile(nextMembersFile);
       setMembersFile(nextMembersFile);
       setMemberError("");
@@ -90,12 +102,7 @@ export function useMembers({
     const currentMember = sourceMembersFile.members[index];
     if (!currentMember) return false;
 
-    const nextMember = {
-      ...currentMember,
-      ...patch,
-      roles: patch.roles ? { ...currentMember.roles, ...patch.roles } : currentMember.roles,
-      counts: patch.counts ? { ...currentMember.counts, ...patch.counts } : currentMember.counts,
-    };
+    const nextMember = mergeMember(currentMember, patch);
     const nextDuplicateKey = duplicateMemberKey(nextMember);
     const duplicatedMember = sourceMembersFile.members.some(
       (member, memberIndex) => memberIndex !== index && duplicateMemberKey(member) === nextDuplicateKey,
@@ -108,19 +115,13 @@ export function useMembers({
 
     const nextMembersFile = {
       ...sourceMembersFile,
-      members: sourceMembersFile.members.map((member, memberIndex) =>
-        memberIndex === index
-          ? {
-              ...member,
-              ...patch,
-              roles: patch.roles ? { ...member.roles, ...patch.roles } : member.roles,
-              counts: patch.counts ? { ...member.counts, ...patch.counts } : member.counts,
-            }
-          : member,
-      ),
+      members: sourceMembersFile.members.map((member, memberIndex) => (memberIndex === index ? nextMember : member)),
     };
 
-    saveStoredMembers(nextMembersFile);
+    if (!saveStoredMembers(nextMembersFile)) {
+      setMemberError(MEMBERS_SAVE_ERROR);
+      return false;
+    }
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
     setMemberError("");
@@ -150,7 +151,10 @@ export function useMembers({
       members: [...currentMembers, nextMember],
     };
 
-    saveStoredMembers(nextMembersFile);
+    if (!saveStoredMembers(nextMembersFile)) {
+      setMemberError(MEMBERS_SAVE_ERROR);
+      return false;
+    }
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
     setMemberError("");
@@ -172,7 +176,10 @@ export function useMembers({
       members,
     };
 
-    saveStoredMembers(nextMembersFile);
+    if (!saveStoredMembers(nextMembersFile)) {
+      setMemberError(MEMBERS_SAVE_ERROR);
+      return;
+    }
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
     onMembersChanged();

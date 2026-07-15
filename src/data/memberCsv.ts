@@ -5,8 +5,17 @@ export const SAMPLE_MEMBERS_CSV = `이름,세례명,정,부,향,향합
 김철수,마태오,false,true,true,false
 `;
 
+const MAX_CSV_ROWS = 2_000;
+const MAX_CSV_CELL_LENGTH = 500;
+
 function escapeCsvCell(value: string) {
-  return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
+  const safeValue = /^[=+\-@\t\r]/.test(value) ? `'\u200B${value}` : value;
+  return /[",\n\r]/.test(safeValue) ? `"${safeValue.replaceAll('"', '""')}"` : safeValue;
+}
+
+function restoreFormulaSafeCell(value: string): string {
+  // 앱이 내보낼 때만 붙이는 예약 표식(' + ZWSP)만 제거한다. 사용자가 입력한 일반 아포스트로피는 보존한다.
+  return value.startsWith("'\u200B") ? value.slice(2) : value;
 }
 
 function parseCsvRows(text: string): string[][] {
@@ -15,12 +24,22 @@ function parseCsvRows(text: string): string[][] {
   let cell = "";
   let quoted = false;
 
+  const ensureCellLength = () => {
+    // 내보내기 예약 표식은 데이터가 아니므로 복원한 최종 셀 길이를 기준으로 제한한다.
+    if (restoreFormulaSafeCell(cell).length > MAX_CSV_CELL_LENGTH) throw new Error(`명단 CSV의 셀은 최대 ${MAX_CSV_CELL_LENGTH}자까지 입력할 수 있습니다.`);
+  };
+  const pushRow = () => {
+    if (row.some(Boolean)) rows.push(row);
+    if (rows.length > MAX_CSV_ROWS) throw new Error(`명단은 최대 ${MAX_CSV_ROWS}행까지 등록할 수 있습니다.`);
+  };
+
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     const nextChar = text[index + 1];
 
     if (quoted && char === '"' && nextChar === '"') {
       cell += '"';
+      ensureCellLength();
       index += 1;
       continue;
     }
@@ -42,21 +61,18 @@ function parseCsvRows(text: string): string[][] {
       }
 
       row.push(cell.trim());
-      if (row.some(Boolean)) {
-        rows.push(row);
-      }
+      pushRow();
       row = [];
       cell = "";
       continue;
     }
 
     cell += char;
+    ensureCellLength();
   }
 
   row.push(cell.trim());
-  if (row.some(Boolean)) {
-    rows.push(row);
-  }
+  pushRow();
 
   return rows;
 }
@@ -96,8 +112,8 @@ export function membersFromCsv(text: string): Partial<Member>[] {
   }
 
   return body.map((row) => ({
-    name: row[nameIndex] ?? "",
-    baptismalName: row[baptismalNameIndex ?? -1] ?? "",
+    name: restoreFormulaSafeCell(row[nameIndex] ?? ""),
+    baptismalName: restoreFormulaSafeCell(row[baptismalNameIndex ?? -1] ?? ""),
     roles: {
       정: parseBoolean(row[indexes.get("정") ?? -1] ?? ""),
       부: parseBoolean(row[indexes.get("부") ?? -1] ?? ""),

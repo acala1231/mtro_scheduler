@@ -2,6 +2,7 @@ import { BASE_ROLES, COUNT_ROLES, type CountRole, type Member, type MembersFile 
 import { membersFromCsv } from "./memberCsv";
 
 const MEMBERS_STORAGE_KEY = "schedule.membersFile";
+const MAX_MEMBERS_CSV_FILE_BYTES = 2 * 1024 * 1024;
 
 function emptyCounts(): Member["counts"] {
   return Object.fromEntries(COUNT_ROLES.map((role) => [role, 0])) as Member["counts"];
@@ -13,6 +14,7 @@ function normalizeMember(raw: Partial<Member>, options: { preserveCounts: boolea
     : emptyCounts();
   const roles = Object.fromEntries(BASE_ROLES.map((role) => [role, Boolean(raw.roles?.[role])])) as Member["roles"];
   return {
+    id: typeof raw.id === "string" && raw.id.trim() ? raw.id : crypto.randomUUID(),
     name: String(raw.name ?? "").trim(),
     baptismalName: String(raw.baptismalName ?? "").trim(),
     roles,
@@ -40,7 +42,10 @@ export function loadStoredMembers(): MembersFile | null {
     const raw = localStorage.getItem(MEMBERS_STORAGE_KEY);
     if (!raw) return null;
 
-    return normalizeMembersFile(JSON.parse(raw) as Partial<MembersFile>, { preserveCounts: true });
+    const parsed = JSON.parse(raw) as Partial<MembersFile>;
+    const normalized = normalizeMembersFile(parsed, { preserveCounts: true });
+    if (parsed.members?.some((member) => !member.id)) saveStoredMembers(normalized);
+    return normalized;
   } catch {
     try {
       localStorage.removeItem(MEMBERS_STORAGE_KEY);
@@ -51,8 +56,13 @@ export function loadStoredMembers(): MembersFile | null {
   }
 }
 
-export function saveStoredMembers(file: MembersFile): void {
-  localStorage.setItem(MEMBERS_STORAGE_KEY, JSON.stringify(normalizeMembersFile(file, { preserveCounts: true })));
+export function saveStoredMembers(file: MembersFile): boolean {
+  try {
+    localStorage.setItem(MEMBERS_STORAGE_KEY, JSON.stringify(normalizeMembersFile(file, { preserveCounts: true })));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function removeStoredMembers(): void {
@@ -64,6 +74,9 @@ export function removeStoredMembers(): void {
 }
 
 export async function parseMembersCsvFile(file: File): Promise<MembersFile> {
+  if (file.size > MAX_MEMBERS_CSV_FILE_BYTES) {
+    throw new Error("명단 파일은 최대 2MB까지 등록할 수 있습니다.");
+  }
   const members = membersFromCsv(await file.text());
   return normalizeMembersFile(members, { preserveCounts: false });
 }

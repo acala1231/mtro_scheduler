@@ -57,13 +57,15 @@ export function issueCounts(issues: Array<{ severity: string }>): { errors: numb
 
 export async function prepareImageForOcr(file: File): Promise<Blob> {
   const image = await createImageBitmap(file);
-  const scale = 2;
+  const maxPixels = 12_000_000;
+  const scale = Math.min(1, Math.sqrt(maxPixels / (image.width * image.height)));
   const canvas = document.createElement("canvas");
-  canvas.width = image.width * scale;
-  canvas.height = image.height * scale;
+  canvas.width = Math.max(1, Math.round(image.width * scale));
+  canvas.height = Math.max(1, Math.round(image.height * scale));
 
-  const context = canvas.getContext("2d");
-  if (!context) return file;
+  try {
+    const context = canvas.getContext("2d");
+    if (!context) return file;
 
   context.fillStyle = "#fff";
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -83,9 +85,12 @@ export async function prepareImageForOcr(file: File): Promise<Blob> {
   }
   context.putImageData(imageData, 0, 0);
 
-  return new Promise((resolve) => {
-    canvas.toBlob((blob) => resolve(blob ?? file), "image/png");
-  });
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ?? file), "image/png");
+    });
+  } finally {
+    image.close();
+  }
 }
 
 export function sanitizeVoteOcrText(text: string): string {

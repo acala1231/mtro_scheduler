@@ -214,6 +214,9 @@ export function MembersScreen({
               </Grid>
             ))}
           </Grid>
+          {membersFile && memberQuery.trim() && visibleMembers.length === 0 && (
+            <Alert severity="info">검색 결과가 없습니다.</Alert>
+          )}
         </>
       )}
     </Screen>

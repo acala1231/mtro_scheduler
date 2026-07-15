@@ -1,10 +1,27 @@
-import { useEffect, useState } from "react";
-import { createWorker, PSM } from "tesseract.js";
+import { useEffect, useRef, useState } from "react";
+import type { PSM as PsmValue } from "tesseract.js";
 import { resolveMemberNamesFromText } from "../../domain/memberMatcher";
 import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain/scheduleTypes";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse } from "../appUtils";
+
+function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): VoteEntry[] {
+  return entries.flatMap((entry) => {
+    if (entry.name === "관리장님") return [entry];
+    return resolveMemberNamesFromText(members, entry.name).map((memberName) => ({ ...entry, name: memberName }));
+  });
+}
+
+function uniqueVotesByScheduleAndName(entries: VoteEntry[]): VoteEntry[] {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const dedupeKey = `${entry.scheduleKey}:${entry.name}`;
+    if (seen.has(dedupeKey)) return false;
+    seen.add(dedupeKey);
+    return true;
+  });
+}
 
 export function useVoteOcr({
   month,
@@ -26,6 +43,12 @@ export function useVoteOcr({
   const [voteConversionError, setVoteConversionError] = useState("");
   const [voteConversionProgress, setVoteConversionProgress] = useState(0);
   const [isVoteConverting, setIsVoteConverting] = useState(false);
+  const requestIdRef = useRef(0);
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    setIsVoteConverting(false);
+  }, [month]);
 
   useEffect(() => {
     return () => {
@@ -33,27 +56,17 @@ export function useVoteOcr({
     };
   }, [voteImagePreviewUrl]);
 
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+  }, []);
+
   function parseVoteAttempt(label: string, rawText: string): VoteOcrAttempt {
     const sanitizedRawText = sanitizeVoteOcrText(rawText);
     const fallbackYear = Number(month.slice(0, 4));
     const parsed = parseVoteText(sanitizedRawText, settings.serviceSchedules, settings.carSchedules, fallbackYear);
-    const filterByMembers = (entries: VoteEntry[]): VoteEntry[] =>
-      entries.flatMap((entry) => {
-        if (entry.name === "관리장님") return [entry];
-        return resolveMemberNamesFromText(members, entry.name).map((memberName) => ({ ...entry, name: memberName }));
-      });
-    const uniqueByScheduleAndName = (entries: VoteEntry[]): VoteEntry[] => {
-      const seen = new Set<string>();
-      return entries.filter((entry) => {
-        const dedupeKey = `${entry.scheduleKey}:${entry.name}`;
-        if (seen.has(dedupeKey)) return false;
-        seen.add(dedupeKey);
-        return true;
-      });
-    };
     const filteredParsed = {
-      serviceVotes: uniqueByScheduleAndName(filterByMembers(parsed.serviceVotes)),
-      carVotes: uniqueByScheduleAndName(filterByMembers(parsed.carVotes)),
+      serviceVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.serviceVotes, members)),
+      carVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.carVotes, members)),
       voteCounts: parsed.voteCounts,
       detectedMonths: parsed.detectedMonths,
       unparsedLines: parsed.unparsedLines,
@@ -88,9 +101,10 @@ export function useVoteOcr({
 
   async function recognizeVoteImage(
     image: Blob,
-    mode: { label: string; psm: (typeof PSM)[keyof typeof PSM] },
+    mode: { label: string; psm: PsmValue },
     onProgress: (progress: number) => void,
   ): Promise<VoteOcrAttempt> {
+    const { createWorker } = await import("tesseract.js");
     const worker = await createWorker("kor+eng", undefined, {
       logger: (message) => {
         if (message.status === "recognizing text") {
@@ -112,32 +126,38 @@ export function useVoteOcr({
   }
 
   async function convertVoteImage(file: File) {
+    const requestId = ++requestIdRef.current;
     setIsVoteConverting(true);
     updateVotes({ month, rawText: "", serviceVotes: [], carVotes: [] });
     setVoteConversionProgress(5);
     setVoteConversionError("");
 
     try {
+      if (file.size > 15 * 1024 * 1024) throw new Error("image-too-large");
       const preparedImage = await prepareImageForOcr(file);
+      if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(10);
+      const { PSM } = await import("tesseract.js");
       const ocrProgress: Record<string, number> = { "PSM 6": 0, "PSM 11": 0 };
       const updateCombinedProgress = (label: string, progress: number) => {
         ocrProgress[label] = Math.max(ocrProgress[label] ?? 0, progress);
         const averageOcrProgress = (ocrProgress["PSM 6"] + ocrProgress["PSM 11"]) / 2;
-        setVoteConversionProgress(Math.min(95, Math.round(10 + averageOcrProgress * 85)));
+        if (requestId === requestIdRef.current) setVoteConversionProgress(Math.min(95, Math.round(10 + averageOcrProgress * 85)));
       };
-      const attempts = await Promise.all([
-        recognizeVoteImage(preparedImage, { label: "PSM 6", psm: PSM.SINGLE_BLOCK }, (progress) => updateCombinedProgress("PSM 6", progress)),
-        recognizeVoteImage(preparedImage, { label: "PSM 11", psm: PSM.SPARSE_TEXT }, (progress) => updateCombinedProgress("PSM 11", progress)),
-      ]);
+      const attempts = [];
+      attempts.push(await recognizeVoteImage(preparedImage, { label: "PSM 6", psm: PSM.SINGLE_BLOCK }, (progress) => updateCombinedProgress("PSM 6", progress)));
+      if (requestId !== requestIdRef.current) return;
+      attempts.push(await recognizeVoteImage(preparedImage, { label: "PSM 11", psm: PSM.SPARSE_TEXT }, (progress) => updateCombinedProgress("PSM 11", progress)));
+      if (requestId !== requestIdRef.current) return;
       const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
       applyVoteOcrAttempt(bestAttempt);
       setVoteConversionProgress(100);
-    } catch {
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(0);
-      setVoteConversionError("투표결과 입력에 실패했습니다. 이미지를 다시 선택해 주세요.");
+      setVoteConversionError(error instanceof Error && error.message === "image-too-large" ? "이미지는 15MB 이하만 선택할 수 있습니다." : "투표결과 입력에 실패했습니다. 이미지를 다시 선택해 주세요.");
     } finally {
-      setIsVoteConverting(false);
+      if (requestId === requestIdRef.current) setIsVoteConverting(false);
     }
   }
 
@@ -152,6 +172,7 @@ export function useVoteOcr({
   }
 
   function clearVoteImage() {
+    requestIdRef.current += 1;
     setVoteImageName("");
     setVoteImagePreviewUrl("");
     setVoteImageDialogOpen(false);

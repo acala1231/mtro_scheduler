@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultSettings, ensureDefaultScheduleData, makeUniqueScheduleTime } from "./scheduleSettings";
+import { createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange } from "./scheduleSettings";
 import type { ServiceSchedule } from "./scheduleTypes";
 
 describe("createDefaultSettings", () => {
+  it("일정 key가 바뀌면 같은 위치의 투표를 새 key로 이관한다", () => {
+    const previous = createDefaultSettings("2026-07");
+    const next = { ...previous, serviceSchedules: previous.serviceSchedules.map((item, index) => index === 0 ? createServiceSchedule(item.date, "10:30") : item) };
+    const votes = { month: "2026-07", rawText: "", serviceVotes: [{ scheduleKey: previous.serviceSchedules[0].key, name: "홍길동" }], carVotes: [] };
+    expect(migrateVotesForSettingsChange(previous, next, votes).serviceVotes[0]).toMatchObject({ scheduleKey: next.serviceSchedules[0].key, displayText: next.serviceSchedules[0].displayDate });
+  });
+  it("변경 후 정렬 순서가 달라져도 명시한 key로 투표를 이관한다", () => {
+    const previous = createDefaultSettings("2026-07");
+    const oldSchedule = previous.serviceSchedules[2];
+    const changed = createServiceSchedule("2026-07-01", "10:30");
+    const next = { ...previous, serviceSchedules: [changed, ...previous.serviceSchedules.filter((item) => item.key !== oldSchedule.key)] };
+    const votes = { month: "2026-07", rawText: "", serviceVotes: [{ scheduleKey: oldSchedule.key, name: "홍길동" }], carVotes: [] };
+    expect(migrateVotesForSettingsChange(previous, next, votes, { service: new Map([[oldSchedule.key, changed.key]]) }).serviceVotes[0].scheduleKey).toBe(changed.key);
+  });
   it("creates default Sunday service and car schedules for the month", () => {
     const settings = createDefaultSettings("2026-07");
 

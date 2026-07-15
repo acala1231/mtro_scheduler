@@ -1,5 +1,41 @@
-import { BASE_ROLES, type CarSchedule, type ScheduleSettings, type ServiceSchedule } from "./scheduleTypes";
+import { BASE_ROLES, type CarSchedule, type ScheduleSettings, type ServiceSchedule, type VoteData, type VoteEntry } from "./scheduleTypes";
 import { formatKoreanDateTime, makeScheduleKey } from "./dateTime";
+
+type MigratableSchedule = { key: string; displayDate: string };
+
+function migrateVoteEntries<TSchedule extends MigratableSchedule>(
+  oldSchedules: TSchedule[],
+  newSchedules: TSchedule[],
+  entries: VoteEntry[],
+  explicitReplacements?: Map<string, string>,
+): VoteEntry[] {
+  const oldKeys = new Set(oldSchedules.map((item) => item.key));
+  const newKeys = new Set(newSchedules.map((item) => item.key));
+  const replacementSchedules = new Map<string, TSchedule>();
+
+  explicitReplacements?.forEach((newKey, oldKey) => {
+    const newSchedule = newSchedules.find((item) => item.key === newKey);
+    if (newSchedule) replacementSchedules.set(oldKey, newSchedule);
+  });
+
+  oldSchedules.forEach((oldSchedule, index) => {
+    const newSchedule = newSchedules[index];
+    if (
+      !explicitReplacements &&
+      newSchedule &&
+      oldSchedule.key !== newSchedule.key &&
+      !newKeys.has(oldSchedule.key) &&
+      !oldKeys.has(newSchedule.key)
+    ) {
+      replacementSchedules.set(oldSchedule.key, newSchedule);
+    }
+  });
+
+  return entries.map((entry) => {
+    const replacement = replacementSchedules.get(entry.scheduleKey);
+    return replacement ? { ...entry, scheduleKey: replacement.key, displayText: replacement.displayDate } : entry;
+  });
+}
 
 function getSundaysOfMonth(month: string): string[] {
   const [year, monthNumber] = month.split("-").map(Number);
@@ -97,5 +133,13 @@ export function refreshCarSchedule(schedule: CarSchedule): CarSchedule {
     ...schedule,
     key,
     displayDate: formatKoreanDateTime(schedule.date, schedule.time),
+  };
+}
+
+export function migrateVotesForSettingsChange(previous: ScheduleSettings, next: ScheduleSettings, votes: VoteData, replacements?: { service?: Map<string, string>; car?: Map<string, string> }): VoteData {
+  return {
+    ...votes,
+    serviceVotes: migrateVoteEntries(previous.serviceSchedules, next.serviceSchedules, votes.serviceVotes, replacements?.service),
+    carVotes: migrateVoteEntries(previous.carSchedules, next.carSchedules, votes.carVotes, replacements?.car),
   };
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import { Accordion, AccordionDetails, AccordionSummary, Chip, Grid, Stack, TextField, Typography } from "@mui/material";
-import type { CarResultRow, GenerateScheduleResult, Role, ScheduleResultRow, ServiceSchedule } from "../../domain/scheduleTypes";
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Autocomplete, Chip, Grid, Stack, TextField, Typography } from "@mui/material";
+import type { CarResultRow, GenerateScheduleResult, Member, Role, ScheduleResultRow, ServiceSchedule } from "../../domain/scheduleTypes";
+import { validateCarResultRow, validateServiceResultRow } from "../../domain/resultValidation";
 import { assignmentDisplayName, assignmentInputValue, isMissingAssignment } from "../assignmentDisplay";
 import { ROLE_LABELS } from "../appConstants";
 import { EditableAccordionItem } from "./EditableAccordionItem";
@@ -20,6 +21,7 @@ function ServiceResultItem({
   isEditing,
   onToggleEdit,
   onSave,
+  memberNames,
 }: {
   row: ScheduleResultRow;
   rowIndex: number;
@@ -27,8 +29,10 @@ function ServiceResultItem({
   isEditing: boolean;
   onToggleEdit: () => void;
   onSave: (rowIndex: number, row: ScheduleResultRow) => void;
+  memberNames: string[];
 }) {
   const [draft, setDraft] = useState(() => cloneServiceRow(row));
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!isEditing) setDraft(cloneServiceRow(row));
@@ -45,7 +49,10 @@ function ServiceResultItem({
   }
 
   function save() {
+    const errors = validateServiceResultRow(draft, memberNames);
+    if (errors.length) { setError(errors.join(" ")); return; }
     onSave(rowIndex, draft);
+    setError("");
     onToggleEdit();
   }
 
@@ -58,15 +65,10 @@ function ServiceResultItem({
     <EditableAccordionItem title={row.displayDate} isEditing={isEditing} onToggleEdit={onToggleEdit} onSaveEdit={save} onCancelEdit={cancel}>
       {isEditing ? (
         <Grid container spacing={1}>
+          {error && <Grid size={{ xs: 12 }}><Alert severity="error">{error}</Alert></Grid>}
           {visibleRoles.map((role) => (
             <Grid size={{ xs: 12, md: 6 }} key={role}>
-              <TextField
-                size="small"
-                label={role === "향" ? "향로" : role}
-                value={assignmentInputValue(draft.roles[role])}
-                onChange={(event) => updateRole(role, event.target.value)}
-                fullWidth
-              />
+              <Autocomplete freeSolo options={["X", ...memberNames]} value={assignmentInputValue(draft.roles[role])} onInputChange={(_, value) => updateRole(role, value)} renderInput={(params) => <TextField {...params} size="small" label={role === "향" ? "향로" : role} />} />
             </Grid>
           ))}
           <Grid size={{ xs: 12 }}>
@@ -102,21 +104,27 @@ function CarResultItem({
   isEditing,
   onToggleEdit,
   onSave,
+  memberNames,
 }: {
   row: CarResultRow;
   rowIndex: number;
   isEditing: boolean;
   onToggleEdit: () => void;
   onSave: (rowIndex: number, row: CarResultRow) => void;
+  memberNames: string[];
 }) {
   const [draft, setDraft] = useState(row);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!isEditing) setDraft(row);
   }, [isEditing, row]);
 
   function save() {
+    const errors = validateCarResultRow(draft, memberNames);
+    if (errors.length) { setError(errors.join(" ")); return; }
     onSave(rowIndex, draft);
+    setError("");
     onToggleEdit();
   }
 
@@ -129,13 +137,8 @@ function CarResultItem({
     <EditableAccordionItem title={row.displayDate} isEditing={isEditing} onToggleEdit={onToggleEdit} onSaveEdit={save} onCancelEdit={cancel}>
       {isEditing ? (
         <Stack spacing={1}>
-          <TextField
-            size="small"
-            label="차량봉사"
-            value={assignmentInputValue(draft.name)}
-            onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-            fullWidth
-          />
+          {error && <Alert severity="error">{error}</Alert>}
+          <Autocomplete freeSolo options={["X", "관리장님", ...memberNames]} value={assignmentInputValue(draft.name)} onInputChange={(_, value) => setDraft((current) => ({ ...current, name: value }))} renderInput={(params) => <TextField {...params} size="small" label="차량봉사" />} />
           <TextField size="small" label="메모" value={draft.note ?? ""} onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} fullWidth />
         </Stack>
       ) : (
@@ -157,11 +160,13 @@ function CarResultItem({
 export function ScheduleResultEditor({
   result,
   serviceSchedules,
+  members,
   onServiceSave,
   onCarSave,
 }: {
   result: GenerateScheduleResult;
   serviceSchedules: ServiceSchedule[];
+  members: Member[];
   onServiceSave: (rowIndex: number, row: ScheduleResultRow) => void;
   onCarSave: (rowIndex: number, row: CarResultRow) => void;
 }) {
@@ -192,6 +197,7 @@ export function ScheduleResultEditor({
                   isEditing={editingServiceRows.includes(row.displayDate)}
                   onToggleEdit={() => toggleServiceRow(row.displayDate)}
                   onSave={onServiceSave}
+                  memberNames={members.map((member) => member.name)}
                 />
               );
             })}
@@ -213,6 +219,7 @@ export function ScheduleResultEditor({
                 isEditing={editingCarRows.includes(row.displayDate)}
                 onToggleEdit={() => toggleCarRow(row.displayDate)}
                 onSave={onCarSave}
+                memberNames={members.map((member) => member.name)}
               />
             ))}
           </Stack>

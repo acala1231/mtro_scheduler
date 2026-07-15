@@ -5,7 +5,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import { Alert, Box, Button, Dialog, IconButton, Paper, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
-import type { CarResultRow, GenerateScheduleResult, Role, ScheduleResultRow, ScheduleSettings, ValidationIssue } from "../../domain/scheduleTypes";
+import type { CarResultRow, GenerateScheduleResult, Member, Role, ScheduleResultRow, ScheduleSettings, ValidationIssue } from "../../domain/scheduleTypes";
 import { isMissingAssignment } from "../assignmentDisplay";
 import { SchedulePreview } from "../components/SchedulePreview";
 import { ScheduleResultEditor } from "../components/ScheduleResultEditor";
@@ -26,6 +26,7 @@ function missingAssignmentCount(settings: ScheduleSettings, result: GenerateSche
 export function GenerateScreen({
   month,
   settings,
+  members,
   result,
   allIssues,
   errorCount,
@@ -40,6 +41,7 @@ export function GenerateScreen({
 }: {
   month: string;
   settings: ScheduleSettings;
+  members: Member[];
   result: GenerateScheduleResult | undefined;
   allIssues: ValidationIssue[];
   errorCount: number;
@@ -119,6 +121,7 @@ export function GenerateScreen({
           <ScheduleResultEditor
             result={result}
             serviceSchedules={settings.serviceSchedules}
+            members={members}
             onServiceSave={updateServiceResult}
             onCarSave={updateCarResult}
           />

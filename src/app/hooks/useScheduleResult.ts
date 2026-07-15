@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { generateSchedule } from "../../domain/assignmentEngine";
 import { recalculateResultMembers } from "../../domain/resultMembers";
+import { validateCarResultRow, validateServiceResultRow } from "../../domain/resultValidation";
 import {
   createCarSchedule,
   createDefaultSettings,
@@ -42,11 +43,25 @@ export function useScheduleResult({
   sourceMembers: Member[];
   canGenerate: boolean;
   previewRef: RefObject<HTMLDivElement | null>;
-  updateSettings: (settings: ScheduleSettings) => void;
+  updateSettings: (settings: ScheduleSettings, replacements?: { service?: Map<string, string>; car?: Map<string, string> }) => void;
   updateVotes: (votes: VoteData) => void;
   updateResult: (result: GenerateScheduleResult) => void;
   setSavedState: (state: string) => void;
 }) {
+  const memberNames = sourceMembers.map((member) => member.name);
+
+  function saveEditedResult(nextResult: GenerateScheduleResult) {
+    updateResult({
+      ...nextResult,
+      updatedMembers: recalculateResultMembers({
+        sourceMembers,
+        serviceSchedules: settings.serviceSchedules,
+        carSchedules: settings.carSchedules,
+        result: nextResult,
+      }),
+    });
+  }
+
   function addServiceSchedule() {
     const date = firstDateOfMonth(month);
     const time = makeUniqueScheduleTime(date, "11:00", settings.serviceSchedules.map((schedule) => schedule.key));
@@ -77,15 +92,19 @@ export function useScheduleResult({
   }
 
   function updateServiceSchedule(index: number, patch: Partial<ServiceSchedule>) {
+    const oldKey = settings.serviceSchedules[index]?.key;
     const serviceSchedules = settings.serviceSchedules.map((schedule, i) =>
       i === index ? refreshServiceSchedule({ ...schedule, ...patch }) : schedule,
     );
-    updateSettings({ ...settings, serviceSchedules: sortByKey(serviceSchedules) });
+    const newKey = serviceSchedules[index]?.key;
+    updateSettings({ ...settings, serviceSchedules: sortByKey(serviceSchedules) }, oldKey && newKey ? { service: new Map([[oldKey, newKey]]) } : undefined);
   }
 
   function updateCarSchedule(index: number, patch: Partial<CarSchedule>) {
+    const oldKey = settings.carSchedules[index]?.key;
     const carSchedules = settings.carSchedules.map((schedule, i) => (i === index ? refreshCarSchedule({ ...schedule, ...patch }) : schedule));
-    updateSettings({ ...settings, carSchedules: sortByKey(carSchedules) });
+    const newKey = carSchedules[index]?.key;
+    updateSettings({ ...settings, carSchedules: sortByKey(carSchedules) }, oldKey && newKey ? { car: new Map([[oldKey, newKey]]) } : undefined);
   }
 
   function resetVotes(kind: "service" | "car") {
@@ -107,38 +126,24 @@ export function useScheduleResult({
 
   function updateServiceResult(rowIndex: number, row: ScheduleResultRow) {
     if (!result) return;
+    if (validateServiceResultRow(row, memberNames).length > 0) return;
     const nextResult = {
       ...result,
       serviceRows: result.serviceRows.map((currentRow, index) => (index === rowIndex ? row : currentRow)),
     };
 
-    updateResult({
-      ...nextResult,
-      updatedMembers: recalculateResultMembers({
-        sourceMembers,
-        serviceSchedules: settings.serviceSchedules,
-        carSchedules: settings.carSchedules,
-        result: nextResult,
-      }),
-    });
+    saveEditedResult(nextResult);
   }
 
   function updateCarResult(rowIndex: number, row: CarResultRow) {
     if (!result) return;
+    if (validateCarResultRow(row, memberNames).length > 0) return;
     const nextResult = {
       ...result,
       carRows: result.carRows.map((currentRow, index) => (index === rowIndex ? row : currentRow)),
     };
 
-    updateResult({
-      ...nextResult,
-      updatedMembers: recalculateResultMembers({
-        sourceMembers,
-        serviceSchedules: settings.serviceSchedules,
-        carSchedules: settings.carSchedules,
-        result: nextResult,
-      }),
-    });
+    saveEditedResult(nextResult);
   }
 
   function runGenerate() {

@@ -133,6 +133,7 @@ export function MemberCard({
                 color={currentRoles[role] ? "primary" : "default"}
                 variant={currentRoles[role] ? "filled" : "outlined"}
                 size="small"
+                aria-pressed={isEditing ? currentRoles[role] : undefined}
                 sx={isEditing ? { cursor: "pointer" } : undefined}
               />
             ))}

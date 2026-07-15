@@ -10,24 +10,14 @@ function duplicates(values: string[]): string[] {
   return [...dupes];
 }
 
-function memberDuplicateKey(member: Member): string {
-  return `${member.name.trim()}:${(member.baptismalName ?? "").trim()}`;
-}
-
-function memberDisplayNameFromKey(key: string): string {
-  const [name, baptismalName] = key.split(":");
-  return [name, baptismalName].filter(Boolean).join(" ");
-}
-
 export function validateMembers(members: Member[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
-  duplicates(members.map(memberDuplicateKey)).forEach((key) => {
-    const displayName = memberDisplayNameFromKey(key);
+  duplicates(members.map((member) => member.name.trim())).forEach((name) => {
     issues.push({
       severity: "error",
       code: "member.duplicate-name",
-      message: `명단에 중복 이름/세례명이 있습니다: ${displayName}`,
-      target: { type: "member", id: key },
+      message: `현재 투표/결과는 이름으로 연결되므로 같은 이름을 사용할 수 없습니다: ${name}`,
+      target: { type: "member", id: name },
     });
   });
   return issues;
@@ -80,7 +70,7 @@ export function validateVotes(settings: ScheduleSettings, members: Member[], vot
       const scheduleExists = kind === "일반" ? serviceKeys.has(entry.scheduleKey) : carKeys.has(entry.scheduleKey);
       if (!scheduleExists) {
         issues.push({
-          severity: "warning",
+          severity: "error",
           code: "vote.unknown-schedule",
           message: `${kind} 투표에 설정되지 않은 일정이 있습니다: ${entry.displayText || entry.scheduleKey}`,
           target: { type: "vote", id: entry.scheduleKey },
