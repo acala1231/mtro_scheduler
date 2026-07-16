@@ -10,6 +10,7 @@
 - 명단 CSV 파일 선택 또는 수동 추가, 화면 편집, 브라우저 저장
 - 명단이 없을 때 샘플 CSV 다운로드, 명단이 있을 때 현재 명단 CSV 다운로드
 - 카카오톡 투표결과 이미지 선택 후 자동 입력
+- 이미지에서 인식한 미등록 복사일정/차량봉사일정을 일정편집에 자동 추가
 - Tesseract.js와 로컬 `tessdata_best` 한국어/영어 모델 기반 OCR 입력
 - 명단 이름/세례명/선택적 별칭 기반 투표결과 매칭
 - 복사일정/차량봉사 투표결과 수동 보정 및 명단 기반 저장 검증
@@ -60,7 +61,13 @@ src/app/appConstants.tsx
   MUI 테마, 단계 메뉴, 단계 아이콘, 출력 역할 라벨
 
 src/app/appUtils.ts
-  기준월/날짜/시간 유틸, 일정 정렬, OCR 이미지 전처리, OCR 텍스트 정제
+  기준월/날짜/시간 유틸, 일정 정렬, 브라우저 OCR 이미지 준비, OCR 텍스트 정제
+
+src/domain/ocrImageProcessing.ts
+  OCR 행 감지, 픽셀 기반 이진화와 확대 등 순수 이미지 처리
+
+src/domain/scheduleSettings.ts
+  기본 일정 설정 생성, OCR에서 인식한 미등록 일정 병합
 
 src/app/screens/
   홈, 일정편집, 투표결과, 일정표, 명단 화면 본문

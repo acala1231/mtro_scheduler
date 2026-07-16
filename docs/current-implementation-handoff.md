@@ -6,7 +6,7 @@
 
 이 문서가 현재 개발 기준이다. 과거 초기 설계 문서는 제거되었으며, 새 작업은 이 문서와 실제 소스 코드를 기준으로 판단한다.
 
-작성 기준일: 2026-07-14
+작성 기준일: 2026-07-16
 
 ## 실행 방법
 
@@ -40,7 +40,7 @@ src/app/appConstants.tsx
   MUI 테마, 단계 메뉴, 단계 아이콘, 출력 역할 라벨
 
 src/app/appUtils.ts
-  기준월/날짜/시간 유틸, 일정 정렬, OCR 이미지 전처리, OCR 텍스트 정제
+  기준월/날짜/시간 유틸, 일정 정렬, 브라우저 OCR 이미지 준비, OCR 텍스트 정제
 
 src/app/assignmentDisplay.ts
   배정결과 없음 표시, 입력값 변환 유틸
@@ -75,6 +75,12 @@ src/domain/voteParser.ts
 src/domain/voteOcrMerge.ts
   여러 OCR 시도 결과를 투표 인원수 기준으로 병합하는 순수 로직
 
+src/domain/ocrImageProcessing.ts
+  OCR 행 감지, 픽셀 기반 이진화와 확대 등 순수 이미지 처리
+
+src/domain/scheduleSettings.ts
+  기본 일정 설정 생성, OCR에서 인식한 미등록 일정 병합
+
 src/domain/memberMatcher.ts
   OCR 결과에서 명단 이름을 유사 매칭하는 로직
 
@@ -100,7 +106,7 @@ src/app/hooks/useScheduleResult.ts
   일정 추가/초기화/수정, 투표결과 수동 편집, 일정표 생성/PNG 저장 액션
 
 src/app/hooks/useVoteOcr.ts
-  투표결과 이미지 선택, OCR 실행, 진행률/오류/미리보기 상태 관리
+  투표결과 이미지 선택, OCR 실행·취소, 인식 일정 병합, 진행률/오류/미리보기 상태 관리
 
 src/app/hooks/useBackButtonClose.ts
   Dialog/Menu/Popover/Snackbar 등 앱 제어 팝업이 열려 있을 때 물리 뒤로가기 입력으로 페이지 이동 대신 팝업을 닫는 공통 훅
@@ -137,11 +143,12 @@ vite.config.ts
 ### 기본 원칙
 
 - 현재 기능의 실제 기준은 소스 코드다. 문서와 코드가 다르면 코드를 먼저 확인하고 문서를 갱신한다.
-- 앱 전체 상태, 저장, OCR 실행 흐름 변경은 `src/app/App.tsx`에서 처리한다.
+- `src/app/App.tsx`는 앱 최상위 화면과 훅을 조립하고 상태 갱신 경로를 연결한다.
 - 화면 본문 UI 변경은 `src/app/screens/*`에 반영한다.
 - 독립 UI 변경은 `src/app/components/*`에 반영한다.
 - 공통 메뉴/역할 라벨/테마 변경은 `src/app/appConstants.tsx`에 반영한다.
-- 날짜/시간/정렬/OCR 정제 유틸 변경은 `src/app/appUtils.ts`에 반영한다.
+- 날짜/시간/정렬/OCR 텍스트 정제와 브라우저 이미지 준비 유틸은 `src/app/appUtils.ts`에 반영한다.
+- 픽셀 기반 OCR 이미지 처리 규칙은 `src/domain/ocrImageProcessing.ts`, OCR 실행·취소 흐름은 `src/app/hooks/useVoteOcr.ts`에 반영한다.
 - 출력 이미지 CSS 변경은 `src/styles/app.css`에 반영한다.
 - 도메인 규칙 변경은 `src/domain/*`에 둔다. UI 컴포넌트 안에 배정/파싱 규칙을 새로 넣지 않는다.
 - 명단은 Git 또는 배포 파일에 포함하지 않는다. 사용자가 명단 화면에서 CSV 파일을 직접 선택해 브라우저에 저장한다.
@@ -481,8 +488,8 @@ type Member = {
 입력 동작:
 
 - OCR 전처리는 원본이 1080px 폭처럼 작은 글자를 포함하면 최대 1800px 폭을 목표로 확대하되, 실사용 처리량은 약 6MP로 제한하고 12MP는 절대 상한으로 둔다. 따라서 긴 세로 캡처는 6MP 예산에 먼저 맞춘다.
-- 평균 밝기로 배경 극성을 판별한 뒤 Otsu 자동 임계값을 적용한 흰 배경/검은 글자 이진 이미지와, 극성을 정규화하고 명암을 강화한 grayscale 이미지를 순차 생성해 큰 픽셀 버퍼가 동시에 유지되지 않게 한다.
-- 하나의 Tesseract worker를 재사용해 이진 이미지에는 PSM 6, 강화 grayscale 이미지에는 PSM 11을 각각 한 번 적용하며, 성공·실패·취소 경로에서 worker를 종료한다.
+- OCR 대상 텍스트 행을 감지해 행 단위로 자르고, 각 행을 3~4배 확대해 `binary-soft`, `binary`, `binary-strong` 세 가지 이진화 강도로 처리한다.
+- 하나의 Tesseract worker를 재사용해 각 행을 `PSM.SINGLE_LINE(7)`로 인식하고, 날짜/시간 후보 행은 숫자와 날짜·시간 구분 문자만 허용해 한 번 더 인식한다. worker는 성공·실패·취소 경로에서 종료한다.
 - OCR 결과 병합 시 단순 합집합이 아니라 일정별 표시 인원수와 실제 추출 인원수가 가까운 OCR 결과를 우선 선택한다.
 - OCR 시도 점수는 명단 필터 후의 결과를 기준으로 표시 인원수와 정확히 일치하면 보상하고, 인원 차이·초과·파싱 실패 줄은 감점한다.
 - 표시 인원수 정보가 없는 일정은 여러 OCR 결과를 합쳐 사용한다.
@@ -490,8 +497,11 @@ type Member = {
 - 이름은 명단의 이름/세례명을 기준으로 유사 매칭한다.
 - `scheduleKey:name` 기준으로 중복 제거한다.
 - `차량봉사`가 포함된 일정은 차량봉사 투표결과로 들어가야 한다.
+- OCR 성공 시 이미지에서 인식한 미등록 복사일정과 차량봉사일정을 일정편집 설정에 자동 추가한다.
+- 투표자가 0명인 일정도 이미지의 표시 인원수 정보에서 확인되면 추가하며, 이미 등록된 날짜/시간 일정은 중복 추가하지 않는다.
+- OCR 처리 중 사용자가 편집한 최신 일정 설정을 기준으로 병합해 진행 중 편집을 덮어쓰지 않는다.
 - OCR에서 감지한 월이 현재 기준월과 다르면 오류 메시지를 표시한다.
-- 기준월 불일치 시 투표결과는 저장하지 않고 비워서 복사/차량 투표 인원수가 0명으로 표시된다.
+- 기준월 불일치 시 투표결과는 저장하지 않고 비우며, 이미지에서 인식한 일정도 일정편집 설정에 추가하지 않는다.
 
 투표결과 편집:
 
@@ -513,6 +523,9 @@ type Member = {
 ```text
 src/domain/voteParser.ts
 src/domain/memberMatcher.ts
+src/domain/ocrImageProcessing.ts
+src/domain/scheduleSettings.ts
+src/app/hooks/useVoteOcr.ts
 ```
 
 보완된 내용:
@@ -701,12 +714,12 @@ Some chunks are larger than 500 kB after minification
 - 미리보기 표 스타일 회귀 검증 추가
   - 현재 출력 품질은 `src/styles/app.css`와 `SchedulePreview` DOM 구조에 크게 의존한다.
   - 표 폭, 차량봉사 빈 열, 메모 행 높이, `없음`/빈칸 표시가 깨지지 않도록 Playwright 스크린샷 또는 DOM 기반 테스트를 검토한다.
-- `localStorage` 저장 구조 버전 마이그레이션 로직 추가
-  - `MonthSnapshot.version`과 내부 `STORE_VERSION`은 있지만, 현재는 버전별 변환 함수가 없다.
+- `localStorage` 저장 구조 버전 마이그레이션 로직 확장
+  - 현재 `loadSnapshot`은 v1/v2 데이터를 런타임 검증하고 v2로 승격해 반환하지만, 필드 구조를 변환하는 명시적 버전별 migration 함수는 없다.
   - 향후 저장 구조가 바뀌면 기존 사용자의 브라우저 데이터가 깨지지 않도록 `loadSnapshot`에서 버전별 migration을 수행하는 구조가 필요하다.
 - OCR 정확도 개선을 위한 이미지 전처리 추가 검토
-  - 현재는 픽셀 예산 기반 확대, Otsu 이진화, 명암 강화 grayscale의 두 경로를 제공한다.
-  - 이후 일정 영역 분할과 단어별 confidence·bounding box 활용을 비교하면 긴 캡처의 파서 보정이 쉬워진다.
+  - 현재는 픽셀 예산 기반 원본 준비 뒤 텍스트 행을 감지하고, 행별 확대와 세 가지 이진화 강도를 적용한다.
+  - 이후 단어별 confidence·bounding box 활용을 비교하면 긴 캡처의 파서 보정이 쉬워진다.
 - `SettingsEditor` 내부 일정 카드 편집 패턴 공통화 검토
   - 투표결과/배정결과는 `EditableAccordionItem`을 사용하지만, 일정편집의 복사일정/차량봉사 카드는 별도 카드 구조다.
   - 날짜/시간/역할 수정, 취소, 삭제, 저장, 중복 경고 흐름을 공통 편집 컴포넌트로 더 줄일 수 있는지 검토한다.
