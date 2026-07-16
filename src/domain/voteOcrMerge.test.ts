@@ -20,6 +20,20 @@ function attempt(label: string, expectedCount: number, entryCount: number, score
 }
 
 describe("mergeVoteOcrAttempts", () => {
+  it("한 OCR 변형만 다른 월로 오인해도 다수 월을 유지하고 잘못된 월의 투표를 제외한다", () => {
+    const july = attempt("기본 이진화", 2, 2, 100);
+    const julyStrong = attempt("강한 이진화", 2, 2, 90);
+    const may = attempt("약한 이진화", 1, 1, 30);
+    may.parsed.detectedMonths = ["2026-05"];
+    may.parsed.serviceVotes = may.parsed.serviceVotes.map((entry) => ({ ...entry, scheduleKey: "2026-05-05 11:00" }));
+    may.parsed.voteCounts = may.parsed.voteCounts.map((count) => ({ ...count, scheduleKey: "2026-05-05 11:00" }));
+
+    const result = mergeVoteOcrAttempts([july, julyStrong, may], () => 0);
+
+    expect(result.parsed.detectedMonths).toEqual(["2026-07"]);
+    expect(result.parsed.serviceVotes.every((entry) => entry.scheduleKey.startsWith("2026-07"))).toBe(true);
+  });
+
   it("각 시도의 자체 표시 인원수로 후보를 평가하고 채택된 count를 유지한다", () => {
     const binary = attempt("binary", 8, 6, 100);
     const grayscale = attempt("grayscale", 3, 3, 80);

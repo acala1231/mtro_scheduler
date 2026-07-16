@@ -41,10 +41,34 @@ function weakestMatchRank(entries: OcrResolvedVoteEntry[]): number {
   }, Number.POSITIVE_INFINITY);
 }
 
-function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { entries: VoteEntry[]; resolvedEntries: OcrResolvedVoteEntry[]; counts: VoteCountInfo[] } {
+function selectDetectedMonths(attempts: VoteOcrAttempt[]): string[] {
+  const candidates = new Map<string, { votes: number; bestScore: number }>();
+  attempts.forEach((attempt) => {
+    new Set(attempt.parsed.detectedMonths).forEach((month) => {
+      const current = candidates.get(month) ?? { votes: 0, bestScore: Number.NEGATIVE_INFINITY };
+      candidates.set(month, { votes: current.votes + 1, bestScore: Math.max(current.bestScore, attempt.score) });
+    });
+  });
+
+  const selected = [...candidates.entries()].sort(
+    ([monthA, a], [monthB, b]) => b.votes - a.votes || b.bestScore - a.bestScore || monthA.localeCompare(monthB),
+  )[0];
+  return selected ? [selected[0]] : [];
+}
+
+function mergeKind(
+  attempts: VoteOcrAttempt[],
+  kind: VoteCountInfo["kind"],
+  detectedMonths: string[],
+): { entries: VoteEntry[]; resolvedEntries: OcrResolvedVoteEntry[]; counts: VoteCountInfo[] } {
   const scheduleKeys = new Set<string>();
   attempts.forEach((attempt) => resolvedEntriesByKind(attempt, kind).forEach(({ entry }) => scheduleKeys.add(entry.scheduleKey)));
   attempts.forEach((attempt) => attempt.parsed.voteCounts.filter((count) => count.kind === kind).forEach((count) => scheduleKeys.add(count.scheduleKey)));
+  if (detectedMonths.length > 0) {
+    scheduleKeys.forEach((scheduleKey) => {
+      if (!detectedMonths.includes(scheduleKey.slice(0, 7))) scheduleKeys.delete(scheduleKey);
+    });
+  }
   const selectedCounts: VoteCountInfo[] = [];
 
   const selectedResolvedEntries =
@@ -84,14 +108,15 @@ function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { e
 
 export function mergeVoteOcrAttempts(attempts: VoteOcrAttempt[], scoreVoteParse: (parsed: ParseVoteResult) => number): VoteOcrAttempt {
   const bestAttempt = attempts.reduce((best, attempt) => (attempt.score > best.score ? attempt : best), attempts[0]);
-  const service = mergeKind(attempts, "service");
-  const car = mergeKind(attempts, "car");
+  const detectedMonths = selectDetectedMonths(attempts);
+  const service = mergeKind(attempts, "service", detectedMonths);
+  const car = mergeKind(attempts, "car", detectedMonths);
   const voteCounts = [...service.counts, ...car.counts];
   const parsed: ParseVoteResult = {
     serviceVotes: service.entries,
     carVotes: car.entries,
     voteCounts,
-    detectedMonths: [...new Set(attempts.flatMap((attempt) => attempt.parsed.detectedMonths))],
+    detectedMonths,
     unparsedLines: [...new Set(attempts.flatMap((attempt) => attempt.parsed.unparsedLines))],
   };
 
