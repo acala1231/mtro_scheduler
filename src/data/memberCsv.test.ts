@@ -75,7 +75,7 @@ describe("memberCsv", () => {
   });
 
   it("alias 영문 헤더와 별칭 없는 기존 CSV를 모두 지원한다", () => {
-    expect(membersFromCsv("name,baptismalName,alias\n홍성은,사무엘,H\n")[0]).toMatchObject({ alias: "H" });
+    expect(membersFromCsv("name,baptismalName,alias\n윤마루,알파,H\n")[0]).toMatchObject({ alias: "H" });
     expect(membersFromCsv("이름,세례명\n홍길동,베드로\n")[0]).toMatchObject({ alias: "" });
   });
 

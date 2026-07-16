@@ -1,7 +1,13 @@
 import dayjs, { type Dayjs } from "dayjs";
 import type { ParseVoteResult } from "../domain/voteParser";
 import type { ScheduleSettings } from "../domain/scheduleTypes";
-import { calculateOcrDimensions, createOcrPixelVariant } from "../domain/ocrImageProcessing";
+import {
+  calculateOcrDimensions,
+  calculateOcrRowScale,
+  createOcrPixelVariant,
+  detectOcrTextRows,
+  type OcrBinaryVariant,
+} from "../domain/ocrImageProcessing";
 
 export function currentMonth(): string {
   const now = new Date();
@@ -56,34 +62,66 @@ export function issueCounts(issues: Array<{ severity: string }>): { errors: numb
   };
 }
 
-export async function prepareImageForOcr(file: File): Promise<{ binary: Blob; grayscale: Blob }> {
+export type PreparedOcrVariant = { kind: OcrBinaryVariant; rows: Blob[] };
+
+function canvasToPngBlob(canvas: HTMLCanvasElement, fallback: Blob): Promise<Blob> {
+  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob ?? fallback), "image/png"));
+}
+
+export async function prepareImageForOcr(file: File): Promise<PreparedOcrVariant[]> {
   const image = await createImageBitmap(file);
   const dimensions = calculateOcrDimensions(image.width, image.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = dimensions.width;
-  canvas.height = dimensions.height;
+  const detectionCanvas = document.createElement("canvas");
+  detectionCanvas.width = dimensions.width;
+  detectionCanvas.height = dimensions.height;
 
   try {
-    const context = canvas.getContext("2d");
-    if (!context) return { binary: file, grayscale: file };
+    const detectionContext = detectionCanvas.getContext("2d", { willReadFrequently: true });
+    if (!detectionContext) return [{ kind: "binary", rows: [file] }];
 
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.imageSmoothingEnabled = true;
-  context.imageSmoothingQuality = "high";
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    detectionContext.fillStyle = "#fff";
+    detectionContext.fillRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+    detectionContext.drawImage(image, 0, 0, detectionCanvas.width, detectionCanvas.height);
+    const detectionPixels = detectionContext.getImageData(0, 0, detectionCanvas.width, detectionCanvas.height).data;
+    const gray = new Uint8ClampedArray(detectionCanvas.width * detectionCanvas.height);
+    for (let source = 0, target = 0; source < detectionPixels.length; source += 4, target += 1) {
+      gray[target] = Math.round(detectionPixels[source] * 0.299 + detectionPixels[source + 1] * 0.587 + detectionPixels[source + 2] * 0.114);
+    }
+    const detectedRows = detectOcrTextRows(gray, detectionCanvas.width, detectionCanvas.height);
+    if (detectedRows.length === 0) return [{ kind: "binary", rows: [file] }];
 
-    const variantToBlob = async (kind: "binary" | "grayscale"): Promise<Blob> => {
-      const source = context.getImageData(0, 0, canvas.width, canvas.height);
-      const pixels = createOcrPixelVariant(source.data, kind);
-      source.data.set(pixels);
-      context.putImageData(source, 0, 0);
-      return await new Promise((resolve) => canvas.toBlob((blob) => resolve(blob ?? file), "image/png"));
-    };
-    const binary = await variantToBlob("binary");
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const grayscale = await variantToBlob("grayscale");
-    return { binary, grayscale };
+    const sourceScaleY = image.height / detectionCanvas.height;
+    const rowCanvas = document.createElement("canvas");
+    const rowContext = rowCanvas.getContext("2d", { willReadFrequently: true });
+    if (!rowContext) return [{ kind: "binary", rows: [file] }];
+    const variants: PreparedOcrVariant[] = ["binary-soft", "binary", "binary-strong"].map((kind) => ({
+      kind: kind as OcrBinaryVariant,
+      rows: [],
+    }));
+
+    for (const row of detectedRows) {
+      const sourceTop = Math.max(0, Math.floor(row.top * sourceScaleY));
+      const sourceBottom = Math.min(image.height, Math.ceil(row.bottom * sourceScaleY));
+      const sourceHeight = Math.max(1, sourceBottom - sourceTop);
+      const estimatedTextHeight = Math.max(1, (row.bottom - row.top - 4) * sourceScaleY);
+      const scale = calculateOcrRowScale(estimatedTextHeight);
+      rowCanvas.width = Math.max(1, Math.round(image.width * scale));
+      rowCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
+
+      for (const variant of variants) {
+        rowContext.fillStyle = "#fff";
+        rowContext.fillRect(0, 0, rowCanvas.width, rowCanvas.height);
+        rowContext.imageSmoothingEnabled = true;
+        rowContext.imageSmoothingQuality = "high";
+        rowContext.drawImage(image, 0, sourceTop, image.width, sourceHeight, 0, 0, rowCanvas.width, rowCanvas.height);
+        const rowPixels = rowContext.getImageData(0, 0, rowCanvas.width, rowCanvas.height);
+        rowPixels.data.set(createOcrPixelVariant(rowPixels.data, variant.kind));
+        rowContext.putImageData(rowPixels, 0, 0);
+        variant.rows.push(await canvasToPngBlob(rowCanvas, file));
+      }
+    }
+
+    return variants;
   } finally {
     image.close();
   }

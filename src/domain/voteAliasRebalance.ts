@@ -3,6 +3,7 @@ import type { VoteCountInfo, VoteEntry } from "./scheduleTypes";
 export type OcrResolvedVoteEntry = {
   entry: VoteEntry;
   matchedByAlias: boolean;
+  matchKind?: "exact" | "nickname" | "fuzzy" | "alias";
 };
 
 function scheduleDate(scheduleKey: string): string {

@@ -33,6 +33,14 @@ function resolvedEntriesByKind(attempt: VoteOcrAttempt, kind: VoteCountInfo["kin
   return resolved ?? entriesByKind(attempt.parsed, kind).map((entry) => ({ entry, matchedByAlias: false }));
 }
 
+function weakestMatchRank(entries: OcrResolvedVoteEntry[]): number {
+  const ranks = { exact: 4, nickname: 3, alias: 2, fuzzy: 1 };
+  return entries.reduce((weakest, entry) => {
+    const kind = entry.matchKind ?? (entry.matchedByAlias ? "alias" : "exact");
+    return Math.min(weakest, ranks[kind]);
+  }, Number.POSITIVE_INFINITY);
+}
+
 function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { entries: VoteEntry[]; resolvedEntries: OcrResolvedVoteEntry[]; counts: VoteCountInfo[] } {
   const scheduleKeys = new Set<string>();
   attempts.forEach((attempt) => resolvedEntriesByKind(attempt, kind).forEach(({ entry }) => scheduleKeys.add(entry.scheduleKey)));
@@ -49,6 +57,7 @@ function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { e
           count,
           distance: count ? Math.abs(entries.length - count.expectedCount) : Number.POSITIVE_INFINITY,
           overflow: count && entries.length > count.expectedCount ? 1 : 0,
+          matchRank: kind === "car" ? weakestMatchRank(entries) : 0,
           score: attempt.score,
         };
       });
@@ -57,7 +66,9 @@ function mergeKind(attempts: VoteOcrAttempt[], kind: VoteCountInfo["kind"]): { e
         return attempts.flatMap((attempt) => resolvedEntriesByKind(attempt, kind).filter(({ entry }) => entry.scheduleKey === scheduleKey));
       }
 
-      const selected = countedCandidates.sort((a, b) => a.distance - b.distance || a.overflow - b.overflow || b.score - a.score)[0];
+      const selected = countedCandidates.sort(
+        (a, b) => a.distance - b.distance || a.overflow - b.overflow || b.matchRank - a.matchRank || b.score - a.score,
+      )[0];
       if (selected.count) selectedCounts.push(selected.count);
       return selected.entries;
     });

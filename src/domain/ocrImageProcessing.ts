@@ -2,6 +2,12 @@ const DEFAULT_MAX_PIXELS = 12_000_000;
 const PROCESSING_TARGET_PIXELS = 6_000_000;
 const OCR_TARGET_WIDTH = 1800;
 const MAX_UPSCALE = 2;
+const OCR_ROW_MIN_SCALE = 3;
+const OCR_ROW_MAX_SCALE = 4;
+
+export type OcrBinaryVariant = "binary-soft" | "binary" | "binary-strong";
+export type OcrPixelVariant = OcrBinaryVariant | "grayscale";
+export type OcrTextRow = { top: number; bottom: number };
 
 export function calculateOcrDimensions(width: number, height: number, maxPixels = DEFAULT_MAX_PIXELS): { width: number; height: number } {
   const pixelBudgetScale = Math.sqrt(Math.min(maxPixels, PROCESSING_TARGET_PIXELS) / (width * height));
@@ -61,7 +67,7 @@ function rgbaFromGray(values: Uint8ClampedArray): Uint8ClampedArray {
   return result;
 }
 
-export function createOcrPixelVariant(data: Uint8ClampedArray, kind: "binary" | "grayscale"): Uint8ClampedArray {
+export function createOcrPixelVariant(data: Uint8ClampedArray, kind: OcrPixelVariant): Uint8ClampedArray {
   const gray = luminance(data);
   const mean = gray.reduce((sum, value) => sum + value, 0) / Math.max(1, gray.length);
   const darkBackground = mean < 128;
@@ -71,8 +77,9 @@ export function createOcrPixelVariant(data: Uint8ClampedArray, kind: "binary" | 
       normalized[index] = 255 - value;
     });
   }
-  if (kind === "binary") {
-    const threshold = otsuThreshold(normalized);
+  if (kind !== "grayscale") {
+    const thresholdOffset = kind === "binary-soft" ? -20 : kind === "binary-strong" ? 20 : 0;
+    const threshold = Math.max(0, Math.min(255, otsuThreshold(normalized) + thresholdOffset));
     normalized.forEach((value, index) => {
       normalized[index] = value <= threshold ? 0 : 255;
     });
@@ -82,4 +89,65 @@ export function createOcrPixelVariant(data: Uint8ClampedArray, kind: "binary" | 
     });
   }
   return rgbaFromGray(normalized);
+}
+
+export function calculateOcrRowScale(textHeight: number): number {
+  if (!Number.isFinite(textHeight) || textHeight <= 0) return OCR_ROW_MAX_SCALE;
+  return Math.max(OCR_ROW_MIN_SCALE, Math.min(OCR_ROW_MAX_SCALE, Math.ceil(30 / textHeight)));
+}
+
+export function detectOcrTextRows(values: Uint8ClampedArray, width: number, height: number): OcrTextRow[] {
+  if (width <= 0 || height <= 0 || values.length < width * height) return [];
+
+  const normalized = new Uint8ClampedArray(values);
+  const mean = normalized.reduce((sum, value) => sum + value, 0) / normalized.length;
+  if (mean < 128) {
+    normalized.forEach((value, index) => {
+      normalized[index] = 255 - value;
+    });
+  }
+  const threshold = Math.min(210, otsuThreshold(normalized) + 30);
+  const minimumInkPixels = Math.max(2, Math.floor(width * 0.01));
+  const occupied = Array.from({ length: height }, (_, y) => {
+    let inkPixels = 0;
+    for (let x = 0; x < width; x += 1) {
+      if (normalized[y * width + x] <= threshold) inkPixels += 1;
+    }
+    return inkPixels >= minimumInkPixels;
+  });
+
+  const ranges: OcrTextRow[] = [];
+  let start = -1;
+  occupied.forEach((hasInk, y) => {
+    if (hasInk && start < 0) start = y;
+    if (!hasInk && start >= 0) {
+      ranges.push({ top: start, bottom: y });
+      start = -1;
+    }
+  });
+  if (start >= 0) ranges.push({ top: start, bottom: height });
+
+  const merged: OcrTextRow[] = [];
+  ranges.forEach((range) => {
+    const previous = merged.at(-1);
+    if (previous && range.top - previous.bottom <= 2) previous.bottom = range.bottom;
+    else merged.push({ ...range });
+  });
+
+  return merged
+    .filter((range) => range.bottom - range.top >= 2)
+    .map((range) => ({ top: Math.max(0, range.top - 2), bottom: Math.min(height, range.bottom + 2) }));
+}
+
+const ocrDatePattern = /\d{1,2}\s*[./-]\s*\d{1,2}/;
+const ocrTimePattern = /\d{1,2}\s*:\s*\d{2}/;
+const confusedOcrTimePattern = /[0-9OoIl]{1,2}\s*:\s*[0-9OoIl]{2}/;
+
+export function mergeScheduleOcrText(generalText: string, scheduleText: string): string {
+  const date = scheduleText.match(ocrDatePattern)?.[0].replace(/\s/g, "");
+  const time = scheduleText.match(ocrTimePattern)?.[0].replace(/\s/g, "");
+  if (!date || !time) return generalText;
+
+  const mergedDate = ocrDatePattern.test(generalText) ? generalText.replace(ocrDatePattern, date) : `${date} ${generalText}`;
+  return confusedOcrTimePattern.test(mergedDate) ? mergedDate.replace(confusedOcrTimePattern, time) : `${mergedDate} ${time}`;
 }

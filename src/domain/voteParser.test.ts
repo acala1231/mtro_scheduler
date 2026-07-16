@@ -6,15 +6,15 @@ describe("parseVoteText", () => {
   it("splits OCR-style comma separated Kakao poll text into schedule sections", () => {
     const settings = createDefaultSettings("2025-12");
     const result = parseVoteText(
-      "투표현황, 2025년 12월 성인복사단 일정, 12/7 (일) 11:00 : 2명, 김창규 안젤로, 황민수 요한23세, 12/14 (일) 11:00 차량봉사 : 1명, 황용호 가브리엘, 투표한 멤버가 없습니다.",
+      "투표현황, 2025년 12월 성인복사단 일정, 12/7 (일) 11:00 : 2명, 김하늘 베타, 박가람 감마23세, 12/14 (일) 11:00 차량봉사 : 1명, 최도윤 델타, 투표한 멤버가 없습니다.",
       settings.serviceSchedules,
       settings.carSchedules,
       2025,
     );
 
     expect(result.unparsedLines).toEqual([]);
-    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["김창규 안젤로", "황민수 요한 세"]);
-    expect(result.carVotes.map((vote) => vote.name)).toEqual(["황용호 가브리엘"]);
+    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["김하늘 베타", "박가람 감마 세"]);
+    expect(result.carVotes.map((vote) => vote.name)).toEqual(["최도윤 델타"]);
     expect(result.carVotes[0].scheduleKey).toBe("2025-12-14 09:40");
     expect(result.carVotes[0].displayText).toBe("12/14 (일) 09:40");
   });
@@ -22,26 +22,26 @@ describe("parseVoteText", () => {
   it("keeps only Korean and English letters in names", () => {
     const settings = createDefaultSettings("2025-12");
     const result = parseVoteText(
-      "12/7 (일) 11:00 : 2명, [2] 강면진 대건안드……, Bp John23",
+      "12/7 (일) 11:00 : 2명, [2] 권다현 엡실론……, Bp John23",
       settings.serviceSchedules,
       settings.carSchedules,
       2025,
     );
 
-    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["강면진 대건안드", "Bp John"]);
+    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["권다현 엡실론", "Bp John"]);
   });
 
   it("puts date vehicle-service time lines into car votes", () => {
     const settings = createDefaultSettings("2025-12");
     const result = parseVoteText(
-      "12/7 (일) 11:00 : 1명, 김창규 안젤로, 12/14 (일) 차량봉사 11:00 : 1명, 황용호 가브리엘",
+      "12/7 (일) 11:00 : 1명, 김하늘 베타, 12/14 (일) 차량봉사 11:00 : 1명, 최도윤 델타",
       settings.serviceSchedules,
       settings.carSchedules,
       2025,
     );
 
-    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["김창규 안젤로"]);
-    expect(result.carVotes.map((vote) => vote.name)).toEqual(["황용호 가브리엘"]);
+    expect(result.serviceVotes.map((vote) => vote.name)).toEqual(["김하늘 베타"]);
+    expect(result.carVotes.map((vote) => vote.name)).toEqual(["최도윤 델타"]);
     expect(result.carVotes[0].scheduleKey).toBe("2025-12-14 09:40");
     expect(result.carVotes[0].displayText).toBe("12/14 (일) 09:40");
   });
@@ -81,28 +81,57 @@ describe("parseVoteText", () => {
   it("joins OCR-split times before parsing schedule lines", () => {
     const settings = createDefaultSettings("2026-03");
     const result = parseVoteText(
-      "3/8 (일) 11:\n00 : 1명\n권현우",
+      "3/8 (일) 11:\n00 : 1명\n최대현",
       settings.serviceSchedules,
       settings.carSchedules,
       2026,
     );
 
     expect(result.serviceVotes).toEqual([
-      { scheduleKey: "2026-03-08 11:00", displayText: "3/8 (일) 11:00", name: "권현우", source: "ocr" },
+      { scheduleKey: "2026-03-08 11:00", displayText: "3/8 (일) 11:00", name: "최대현", source: "ocr" },
     ]);
+  });
+
+  it("날짜와 차량 헤더가 줄바꿈으로 분리되고 요일 닫는 괄호만 남아도 결합한다", () => {
+    const settings = createDefaultSettings("2026-07");
+    const result = parseVoteText(
+      "7/12\n) 9:40 차량봉사 : 1명\n면진이형",
+      settings.serviceSchedules,
+      settings.carSchedules,
+      2026,
+    );
+
+    expect(result.carVotes).toEqual([
+      { scheduleKey: "2026-07-12 09:40", displayText: "7/12 (일) 09:40", name: "면진이형", source: "ocr" },
+    ]);
+    expect(result.voteCounts).toContainEqual({
+      scheduleKey: "2026-07-12 09:40",
+      displayText: "7/12 (일) 09:40",
+      kind: "car",
+      expectedCount: 1,
+    });
+
+    const splitWeekdayResult = parseVoteText(
+      "7/12 (일\n) 9:40 차량봉사 : 1명\n면진이형",
+      settings.serviceSchedules,
+      settings.carSchedules,
+      2026,
+    );
+
+    expect(splitWeekdayResult.carVotes).toEqual(result.carVotes);
   });
 
   it("normalizes two-digit OCR day overflows like 6/72 to 6/7", () => {
     const settings = createDefaultSettings("2026-06");
     const result = parseVoteText(
-      "6/72 11:00 : 1명\n권현우",
+      "6/72 11:00 : 1명\n최대현",
       settings.serviceSchedules,
       settings.carSchedules,
       2026,
     );
 
     expect(result.serviceVotes).toEqual([
-      { scheduleKey: "2026-06-07 11:00", displayText: "6/7 (일) 11:00", name: "권현우", source: "ocr" },
+      { scheduleKey: "2026-06-07 11:00", displayText: "6/7 (일) 11:00", name: "최대현", source: "ocr" },
     ]);
   });
 
@@ -133,14 +162,14 @@ describe("parseVoteText", () => {
   it("splits comma separated manager car lines even when the line has no time", () => {
     const settings = createDefaultSettings("2026-03");
     const result = parseVoteText(
-      "3/15 (일) 차량봉사 9:40 : 1명, 이원상 요셉, 3/29 (일) 차량봉사 관리장님 : 0명, 투표한 멤버가 없습니다.",
+      "3/15 (일) 차량봉사 9:40 : 1명, 이가온 제타, 3/29 (일) 차량봉사 관리장님 : 0명, 투표한 멤버가 없습니다.",
       settings.serviceSchedules,
       settings.carSchedules,
       2026,
     );
 
     expect(result.carVotes).toEqual([
-      { scheduleKey: "2026-03-15 09:40", displayText: "3/15 (일) 09:40", name: "이원상 요셉", source: "ocr" },
+      { scheduleKey: "2026-03-15 09:40", displayText: "3/15 (일) 09:40", name: "이가온 제타", source: "ocr" },
       { scheduleKey: "2026-03-29 09:40", displayText: "3/29 (일) 09:40", name: "관리장님", source: "ocr" },
     ]);
   });
@@ -148,7 +177,7 @@ describe("parseVoteText", () => {
   it("detects months from parsed schedule lines", () => {
     const settings = createDefaultSettings("2026-03");
     const result = parseVoteText(
-      "4/5 (일) 11:00 : 1명\n김창규 안젤로\n4/26 (일) 차량봉사 관리장님 : 0명",
+      "4/5 (일) 11:00 : 1명\n김하늘 베타\n4/26 (일) 차량봉사 관리장님 : 0명",
       settings.serviceSchedules,
       settings.carSchedules,
       2026,

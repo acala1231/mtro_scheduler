@@ -4,15 +4,17 @@ import { resolveMemberMatchesFromText } from "../../domain/memberMatcher";
 import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain/scheduleTypes";
 import { rebalanceAliasVotes, type OcrResolvedVoteEntry } from "../../domain/voteAliasRebalance";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
+import { mergeScheduleOcrText } from "../../domain/ocrImageProcessing";
 import { parseVoteText } from "../../domain/voteParser";
-import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse } from "../appUtils";
+import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse, type PreparedOcrVariant } from "../appUtils";
 
 function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): OcrResolvedVoteEntry[] {
-  return entries.flatMap((entry) => {
-    if (entry.name === "관리장님") return [{ entry, matchedByAlias: false }];
+  return entries.flatMap<OcrResolvedVoteEntry>((entry) => {
+    if (entry.name === "관리장님") return [{ entry, matchedByAlias: false, matchKind: "exact" }];
     return resolveMemberMatchesFromText(members, entry.name).map((match) => ({
       entry: { ...entry, name: match.name },
       matchedByAlias: match.matchedByAlias,
+      matchKind: match.matchKind,
     }));
   });
 }
@@ -115,15 +117,33 @@ export function useVoteOcr({
 
   async function recognizeVoteImage(
     worker: Worker,
-    image: Blob,
-    mode: { label: string; psm: PsmValue },
+    variant: PreparedOcrVariant,
+    mode: { label: string; psm: PsmValue; isCancelled: () => boolean; onProgress: (progress: number) => void },
   ): Promise<VoteOcrAttempt> {
     await worker.setParameters({
       tessedit_pageseg_mode: mode.psm,
       preserve_interword_spaces: "1",
+      tessedit_char_whitelist: "",
     });
-    const result = await worker.recognize(image);
-    return parseVoteAttempt(mode.label, result.data.text.trim());
+    const lines: string[] = [];
+    for (let index = 0; index < variant.rows.length; index += 1) {
+      if (mode.isCancelled()) throw new Error("ocr-cancelled");
+      const result = await worker.recognize(variant.rows[index]);
+      const generalText = result.data.text.trim();
+      let finalText = generalText;
+      if (/\d.*[/:]|[/:].*\d/.test(generalText)) {
+        await worker.setParameters({
+          tessedit_pageseg_mode: mode.psm,
+          tessedit_char_whitelist: "0123456789./:-() ",
+        });
+        const scheduleResult = await worker.recognize(variant.rows[index]);
+        finalText = mergeScheduleOcrText(generalText, scheduleResult.data.text.trim());
+        await worker.setParameters({ tessedit_char_whitelist: "" });
+      }
+      if (finalText) lines.push(finalText);
+      mode.onProgress((index + 1) / variant.rows.length);
+    }
+    return parseVoteAttempt(mode.label, lines.join("\n"));
   }
 
   async function convertVoteImage(file: File) {
@@ -139,25 +159,27 @@ export function useVoteOcr({
       if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(10);
       const { createWorker, PSM } = await import("tesseract.js");
-      const ocrProgress: Record<string, number> = { "이진 PSM 6": 0, "명암 PSM 11": 0 };
-      let activeLabel = "이진 PSM 6";
+      const ocrProgress: Record<string, number> = Object.fromEntries(preparedImages.map(({ kind }) => [kind, 0]));
       const updateCombinedProgress = (label: string, progress: number) => {
         ocrProgress[label] = Math.max(ocrProgress[label] ?? 0, progress);
-        const averageOcrProgress = (ocrProgress["이진 PSM 6"] + ocrProgress["명암 PSM 11"]) / 2;
+        const averageOcrProgress = Object.values(ocrProgress).reduce((sum, value) => sum + value, 0) / preparedImages.length;
         if (requestId === requestIdRef.current) setVoteConversionProgress(Math.min(95, Math.round(10 + averageOcrProgress * 85)));
       };
       const worker = await createWorker("kor+eng", undefined, {
-        logger: (message) => {
-          if (message.status === "recognizing text") updateCombinedProgress(activeLabel, message.progress);
-        },
+        langPath: `${import.meta.env.BASE_URL}tessdata`,
+        gzip: false,
       });
       try {
-        const attempts = [];
-        attempts.push(await recognizeVoteImage(worker, preparedImages.binary, { label: activeLabel, psm: PSM.SINGLE_BLOCK }));
-        if (requestId !== requestIdRef.current) return;
-        activeLabel = "명암 PSM 11";
-        attempts.push(await recognizeVoteImage(worker, preparedImages.grayscale, { label: activeLabel, psm: PSM.SPARSE_TEXT }));
-        if (requestId !== requestIdRef.current) return;
+        const attempts: VoteOcrAttempt[] = [];
+        for (const variant of preparedImages) {
+          const label = `${variant.kind} 행 PSM 7`;
+          attempts.push(await recognizeVoteImage(worker, variant, {
+            label,
+            psm: PSM.SINGLE_LINE,
+            isCancelled: () => requestId !== requestIdRef.current,
+            onProgress: (progress) => updateCombinedProgress(variant.kind, progress),
+          }));
+        }
         const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
         applyVoteOcrAttempt(bestAttempt);
         setVoteConversionProgress(100);

@@ -89,4 +89,53 @@ describe("mergeVoteOcrAttempts", () => {
     expect(rebalanced.serviceVotes.map(({ entry }) => entry.name)).toEqual(["회원1", "회원2", "회원3", "별칭회원"]);
     expect(rebalanced.carVotes.map(({ entry }) => entry.name)).toEqual(["차량회원"]);
   });
+
+  it("인원수가 같은 차량 후보끼리는 단문자 별칭보다 이름으로 매칭된 후보를 선택한다", () => {
+    const scheduleKey = "2026-07-12 09:40";
+    const makeCarAttempt = (
+      label: string,
+      name: string,
+      matchKind: "exact" | "nickname" | "fuzzy" | "alias",
+      score: number,
+      kind: "service" | "car" = "car",
+    ): VoteOcrAttempt => {
+      const entry = { scheduleKey, displayText: "7/12 (일) 09:40", name, source: "ocr" as const };
+      return {
+        label,
+        rawText: label,
+        sanitizedRawText: label,
+        score,
+        parsed: {
+          serviceVotes: kind === "service" ? [entry] : [],
+          carVotes: kind === "car" ? [entry] : [],
+          voteCounts: [{ scheduleKey, displayText: entry.displayText, kind, expectedCount: 1 }],
+          detectedMonths: ["2026-07"],
+          unparsedLines: [],
+        },
+        resolvedVotes: {
+          serviceVotes: kind === "service" ? [{ entry, matchedByAlias: matchKind === "alias", matchKind }] : [],
+          carVotes: kind === "car" ? [{ entry, matchedByAlias: matchKind === "alias", matchKind }] : [],
+        },
+      };
+    };
+    const aliasAttempt = makeCarAttempt("이진 PSM 6", "윤마루", "alias", 100);
+    const nameAttempt = makeCarAttempt("명암 PSM 11", "권다현", "nickname", 80);
+
+    const result = mergeVoteOcrAttempts([aliasAttempt, nameAttempt], () => 0);
+
+    expect(result.parsed.carVotes.map((entry) => entry.name)).toEqual(["권다현"]);
+    expect(result.resolvedVotes?.carVotes).toEqual([
+      expect.objectContaining({ entry: expect.objectContaining({ name: "권다현" }), matchedByAlias: false, matchKind: "nickname" }),
+    ]);
+
+    const normalAlias = makeCarAttempt("정상 별칭", "윤마루", "alias", 100);
+    const fuzzy = makeCarAttempt("낮은 신뢰도 이름", "다른회원", "fuzzy", 80);
+    expect(mergeVoteOcrAttempts([normalAlias, fuzzy], () => 0).parsed.carVotes.map((entry) => entry.name)).toEqual(["윤마루"]);
+
+    const highScoreServiceAlias = makeCarAttempt("복사 별칭", "윤마루", "alias", 100, "service");
+    const lowScoreServiceNickname = makeCarAttempt("복사 호칭", "권다현", "nickname", 80, "service");
+    expect(mergeVoteOcrAttempts([highScoreServiceAlias, lowScoreServiceNickname], () => 0).parsed.serviceVotes.map((entry) => entry.name)).toEqual([
+      "윤마루",
+    ]);
+  });
 });

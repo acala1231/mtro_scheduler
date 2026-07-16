@@ -18,6 +18,8 @@ function isCarLine(line: string): boolean {
 function normalizeOcrVoteText(text: string): string {
   return text
     .replace(/\r/g, "\n")
+    .replace(/((?:(?:\d{4})[-./년]\s*)?\d{1,2}[-./월]\s*\d{1,2}(?:일)?\s*\([^\n)]*)\s*\n\s*\)\s*(?=\d{1,2}:\d{2}[^\n]*(?:차량|운전|픽업))/g, "$1) ")
+    .replace(/((?:(?:\d{4})[-./년]\s*)?\d{1,2}[-./월]\s*\d{1,2}(?:일)?)\s*\n\s*\)\s*(?=\d{1,2}:\d{2}[^\n]*(?:차량|운전|픽업))/g, "$1 ")
     .replace(/(\d{1,2}):\s*\n\s*(\d{2})/g, "$1:$2")
     .replace(/[，、]/g, ",")
     .replace(/\s*,\s*(?=(?:(?:\d{4})[-./년]\s*)?\d{1,2}[-./월]\s*\d{1,2}(?:일)?(?:\s*\([^)]*\))?[^,\n]*(?:\d{1,2}:\d{2}|관리장님))/g, "\n");

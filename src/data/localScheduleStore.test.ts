@@ -55,7 +55,7 @@ describe("localScheduleStore", () => {
       version: 2, month: "2026-07", updatedAt: "now",
       result: {
         generatedAt: "now", serviceRows: [], carRows: [], issues: [],
-        updatedMembers: [{ name: "홍성은", baptismalName: "사무엘", alias: "H", roles: { 정: true }, counts: { 전체: 0 } }],
+        updatedMembers: [{ name: "윤마루", baptismalName: "알파", alias: "H", roles: { 정: true }, counts: { 전체: 0 } }],
       },
     }));
     expect(loadSnapshot("2026-07").result?.updatedMembers[0].alias).toBe("H");

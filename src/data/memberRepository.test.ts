@@ -8,7 +8,7 @@ describe("parseMembersCsvFile", () => {
   });
 
   it("별칭을 trim해 보존한다", async () => {
-    const file = new File(["이름,세례명,별칭\n홍성은,사무엘,  H  \n"], "members.csv", { type: "text/csv" });
+    const file = new File(["이름,세례명,별칭\n윤마루,알파,  H  \n"], "members.csv", { type: "text/csv" });
     await expect(parseMembersCsvFile(file)).resolves.toMatchObject({ members: [expect.objectContaining({ alias: "H" })] });
   });
 

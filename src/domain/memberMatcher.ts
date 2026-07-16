@@ -100,7 +100,8 @@ function resolveByUniqueNameSuffix(members: Member[], value: string): string | u
   const matchedMember = members.find((member) => {
     const name = normalizeOcrConfusions(normalizeMemberNameForMatch(member.name));
     const suffix = name.length >= 3 ? name.slice(-2) : "";
-    return suffix && suffixCounts.get(suffix) === 1 && tokens.includes(suffix);
+    const nicknameTokens = new Set([suffix, `${suffix}형`, `${suffix}형님`, `${suffix}이형`]);
+    return suffix && suffixCounts.get(suffix) === 1 && tokens.some((token) => nicknameTokens.has(token));
   });
 
   return matchedMember?.name;
@@ -116,6 +117,7 @@ function resolveByUniqueStandaloneAlias(members: Member[], input: string): strin
 export type MemberTextMatch = {
   name: string;
   matchedByAlias: boolean;
+  matchKind: "exact" | "nickname" | "fuzzy" | "alias";
 };
 
 export function resolveMemberMatchFromText(members: Member[], value: string): MemberTextMatch | undefined {
@@ -125,7 +127,7 @@ export function resolveMemberMatchFromText(members: Member[], value: string): Me
   const exactName = members.find(
     (member) => normalizeOcrConfusions(normalizeMemberNameForMatch(member.name)) === input,
   );
-  if (exactName) return { name: exactName.name, matchedByAlias: false };
+  if (exactName) return { name: exactName.name, matchedByAlias: false, matchKind: "exact" };
 
   const uniqueBaptismalNameSet = uniqueBaptismalNames(members);
   const matches = members
@@ -142,13 +144,13 @@ export function resolveMemberMatchFromText(members: Member[], value: string): Me
 
   const confident = best.score >= 0.92;
   const fuzzyButClear = best.score >= 0.72 && best.score - (second?.score ?? 0) >= 0.08;
-  if (confident || fuzzyButClear) return { name: best.member.name, matchedByAlias: false };
+  if (confident || fuzzyButClear) return { name: best.member.name, matchedByAlias: false, matchKind: "fuzzy" };
 
   const suffixMatch = resolveByUniqueNameSuffix(members, value);
-  if (suffixMatch) return { name: suffixMatch, matchedByAlias: false };
+  if (suffixMatch) return { name: suffixMatch, matchedByAlias: false, matchKind: "nickname" };
 
   const aliasMatch = resolveByUniqueStandaloneAlias(members, input);
-  return aliasMatch ? { name: aliasMatch, matchedByAlias: true } : undefined;
+  return aliasMatch ? { name: aliasMatch, matchedByAlias: true, matchKind: "alias" } : undefined;
 }
 
 export function resolveMemberNameFromText(members: Member[], value: string): string | undefined {
@@ -163,10 +165,10 @@ export function resolveMemberMatchesFromText(members: Member[], value: string): 
   const input = normalizeOcrConfusions(normalizeMemberNameForMatch(value));
   if (!input) return [];
 
-  const positionedMatches = members
+  const positionedMatches: Array<{ match: MemberTextMatch; index: number }> = members
     .map((member) => ({ member, index: input.indexOf(normalizeOcrConfusions(normalizeMemberNameForMatch(member.name))) }))
     .filter(({ index }) => index >= 0)
-    .map(({ member, index }) => ({ match: { name: member.name, matchedByAlias: false }, index }));
+    .map(({ member, index }) => ({ match: { name: member.name, matchedByAlias: false, matchKind: "exact" as const }, index }));
 
   if (positionedMatches.length === 0) {
     const primaryMatch = resolveMemberMatchFromText(members, value);
@@ -201,7 +203,7 @@ export function resolveMemberMatchesFromText(members: Member[], value: string): 
     const member = members.find(
       (item) => normalizeOcrConfusions(normalizeMemberNameForMatch(item.alias ?? "")) === token,
     );
-    if (member) positionedMatches.push({ match: { name: member.name, matchedByAlias: true }, index: tokenMatch.index ?? 0 });
+    if (member) positionedMatches.push({ match: { name: member.name, matchedByAlias: true, matchKind: "alias" }, index: tokenMatch.index ?? 0 });
   }
 
   return positionedMatches
