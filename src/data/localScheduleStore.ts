@@ -1,6 +1,6 @@
 import type { GenerateScheduleResult, ScheduleSettings, VoteData } from "../domain/scheduleTypes";
 
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 const LAST_MONTH_KEY = "schedule.lastMonth";
 
 export type MonthSnapshot = {
@@ -45,7 +45,17 @@ export function loadSnapshot(month: string): MonthSnapshot {
     if (!raw) return emptySnapshot(month);
     const parsed: unknown = JSON.parse(raw);
     if (!isSnapshot(parsed, month)) return emptySnapshot(month);
-    return { ...parsed, version: STORE_VERSION };
+    const preserveOcrSource = parsed.version === 3;
+    const settings = parsed.settings && {
+      ...parsed.settings,
+      serviceSchedules: parsed.settings.serviceSchedules.map(({ source, ...schedule }) =>
+        preserveOcrSource && source === "ocr" ? { ...schedule, source } : schedule,
+      ),
+      carSchedules: parsed.settings.carSchedules.map(({ source, ...schedule }) =>
+        preserveOcrSource && source === "ocr" ? { ...schedule, source } : schedule,
+      ),
+    };
+    return { ...parsed, version: STORE_VERSION, settings };
   } catch {
     return emptySnapshot(month);
   }
@@ -60,7 +70,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isSnapshot(value: unknown, month: string): value is MonthSnapshot {
-  if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || value.month !== month || typeof value.updatedAt !== "string") return false;
+  if (!isRecord(value) || (value.version !== 1 && value.version !== 2 && value.version !== 3) || value.month !== month || typeof value.updatedAt !== "string") return false;
   const isSchedule = (item: unknown, service: boolean) => isRecord(item) && typeof item.key === "string" && typeof item.date === "string" && typeof item.time === "string" && typeof item.displayDate === "string" && (!service || (Array.isArray(item.baseRoles) && item.baseRoles.every((role) => typeof role === "string") && Array.isArray(item.subRoles) && item.subRoles.every((role) => typeof role === "string")));
   const isVote = (item: unknown) => isRecord(item) && typeof item.scheduleKey === "string" && typeof item.name === "string";
   const isOptionalString = (value: unknown) => value === undefined || typeof value === "string";

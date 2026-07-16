@@ -40,6 +40,7 @@ export type ServiceSchedule = {
   displayDate: string;
   baseRoles: BaseRole[];
   subRoles: SubRole[];
+  source?: "ocr";
 };
 
 export type CarSchedule = {
@@ -47,6 +48,7 @@ export type CarSchedule = {
   date: string;
   time: string;
   displayDate: string;
+  source?: "ocr";
 };
 
 export type ScheduleSettings = {

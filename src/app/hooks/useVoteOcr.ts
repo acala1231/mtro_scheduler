@@ -5,7 +5,7 @@ import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain
 import { rebalanceAliasVotes, type OcrResolvedVoteEntry } from "../../domain/voteAliasRebalance";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
 import { mergeScheduleOcrText } from "../../domain/ocrImageProcessing";
-import { addVoteSchedulesToSettings } from "../../domain/scheduleSettings";
+import { addVoteSchedulesToSettings, removeOcrSchedules } from "../../domain/scheduleSettings";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse, type PreparedOcrVariant } from "../appUtils";
 
@@ -34,13 +34,11 @@ export function useVoteOcr({
   month,
   settings,
   members,
-  updateVotes,
   updateSettingsAndVotes,
 }: {
   month: string;
   settings: ScheduleSettings;
   members: Member[];
-  updateVotes: (votes: VoteData) => void;
   updateSettingsAndVotes: (
     updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
   ) => void;
@@ -69,10 +67,10 @@ export function useVoteOcr({
     requestIdRef.current += 1;
   }, []);
 
-  function parseVoteAttempt(label: string, rawText: string): VoteOcrAttempt {
+  function parseVoteAttempt(label: string, rawText: string, parseSettings: ScheduleSettings): VoteOcrAttempt {
     const sanitizedRawText = sanitizeVoteOcrText(rawText);
     const fallbackYear = Number(month.slice(0, 4));
-    const parsed = parseVoteText(sanitizedRawText, settings.serviceSchedules, settings.carSchedules, fallbackYear);
+    const parsed = parseVoteText(sanitizedRawText, parseSettings.serviceSchedules, parseSettings.carSchedules, fallbackYear);
     const resolvedVotes = {
       serviceVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.serviceVotes, members)),
       carVotes: uniqueVotesByScheduleAndName(resolveVoteEntryMembers(parsed.carVotes, members)),
@@ -127,7 +125,7 @@ export function useVoteOcr({
   async function recognizeVoteImage(
     worker: Worker,
     variant: PreparedOcrVariant,
-    mode: { label: string; psm: PsmValue; isCancelled: () => boolean; onProgress: (progress: number) => void },
+    mode: { label: string; psm: PsmValue; parseSettings: ScheduleSettings; isCancelled: () => boolean; onProgress: (progress: number) => void },
   ): Promise<VoteOcrAttempt> {
     await worker.setParameters({
       tessedit_pageseg_mode: mode.psm,
@@ -152,13 +150,20 @@ export function useVoteOcr({
       if (finalText) lines.push(finalText);
       mode.onProgress((index + 1) / variant.rows.length);
     }
-    return parseVoteAttempt(mode.label, lines.join("\n"));
+    return parseVoteAttempt(mode.label, lines.join("\n"), mode.parseSettings);
   }
 
   async function convertVoteImage(file: File) {
     const requestId = ++requestIdRef.current;
     setIsVoteConverting(true);
-    updateVotes({ month, rawText: "", serviceVotes: [], carVotes: [] });
+    let requestSettings = removeOcrSchedules(settings);
+    updateSettingsAndVotes(({ settings: latestSettings }) => {
+      requestSettings = removeOcrSchedules(latestSettings);
+      return {
+        settings: requestSettings,
+        votes: { month, rawText: "", serviceVotes: [], carVotes: [] },
+      };
+    });
     setVoteConversionProgress(5);
     setVoteConversionError("");
 
@@ -185,6 +190,7 @@ export function useVoteOcr({
           attempts.push(await recognizeVoteImage(worker, variant, {
             label,
             psm: PSM.SINGLE_LINE,
+            parseSettings: requestSettings,
             isCancelled: () => requestId !== requestIdRef.current,
             onProgress: (progress) => updateCombinedProgress(variant.kind, progress),
           }));

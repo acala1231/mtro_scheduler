@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addVoteSchedulesToSettings, createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange } from "./scheduleSettings";
+import { addVoteSchedulesToSettings, createCarSchedule, createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange, refreshCarSchedule, refreshServiceSchedule, removeOcrSchedules } from "./scheduleSettings";
 import type { ServiceSchedule } from "./scheduleTypes";
 
 describe("createDefaultSettings", () => {
@@ -16,8 +16,43 @@ describe("createDefaultSettings", () => {
       [{ scheduleKey: "2026-07-12 09:20", displayText: "7/12 (일) 09:20", name: "김철수", source: "ocr" }],
     );
 
-    expect(next.serviceSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 10:30", date: "2026-07-12", time: "10:30" })]);
-    expect(next.carSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 09:20", date: "2026-07-12", time: "09:20" })]);
+    expect(next.serviceSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 10:30", date: "2026-07-12", time: "10:30", source: "ocr" })]);
+    expect(next.carSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 09:20", date: "2026-07-12", time: "09:20", source: "ocr" })]);
+  });
+  it("새 이미지 선택 전 OCR 자동 추가 일정만 제거한다", () => {
+    const manual = createServiceSchedule("2026-07-03", "18:00");
+    const ocr = { ...createServiceSchedule("2026-07-12", "10:30"), source: "ocr" as const };
+    const settings = { ...createDefaultSettings("2026-07"), serviceSchedules: [manual, ocr] };
+
+    const next = removeOcrSchedules(settings);
+
+    expect(next.serviceSchedules).toEqual([manual]);
+    expect(next.carSchedules).toHaveLength(settings.carSchedules.length);
+  });
+
+  it("OCR 자동 추가 일정을 편집하면 영구 일정으로 전환한다", () => {
+    const ocr = { ...createServiceSchedule("2026-07-12", "10:30"), source: "ocr" as const };
+
+    expect(refreshServiceSchedule({ ...ocr, time: "11:00" })).not.toHaveProperty("source");
+  });
+
+  it("OCR 자동 추가 차량 일정을 편집하면 영구 일정으로 전환한다", () => {
+    const ocr = { ...createCarSchedule("2026-07-12", "09:40"), source: "ocr" as const };
+
+    expect(refreshCarSchedule({ ...ocr, time: "10:00" })).not.toHaveProperty("source");
+  });
+
+  it("새 이미지 일정 병합 시 이전 OCR 일정의 다른 시간을 되살리지 않는다", () => {
+    const previousOcr = { ...createServiceSchedule("2026-07-12", "10:30"), source: "ocr" as const };
+    const settings = { ...createDefaultSettings("2026-07"), serviceSchedules: [previousOcr], carSchedules: [] };
+
+    const next = addVoteSchedulesToSettings(
+      removeOcrSchedules(settings),
+      [{ scheduleKey: "2026-07-12 11:30", displayText: "7/12 (일) 11:30", name: "홍길동", source: "ocr" }],
+      [],
+    );
+
+    expect(next.serviceSchedules.map(({ key }) => key)).toEqual(["2026-07-12 11:30"]);
   });
 
   it("이미 등록된 투표 일정은 중복 추가하지 않는다", () => {

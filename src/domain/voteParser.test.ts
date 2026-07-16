@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultSettings } from "./scheduleSettings";
+import { createDefaultSettings, createServiceSchedule, removeOcrSchedules } from "./scheduleSettings";
 import { parseVoteText } from "./voteParser";
 
 describe("parseVoteText", () => {
+  it("새 OCR 요청에서 제거한 이전 이미지 일정의 다른 시간으로 key를 되돌리지 않는다", () => {
+    const previousOcr = { ...createServiceSchedule("2026-07-12", "10:30"), source: "ocr" as const };
+    const settings = removeOcrSchedules({
+      ...createDefaultSettings("2026-07"),
+      serviceSchedules: [previousOcr],
+      carSchedules: [],
+    });
+
+    const result = parseVoteText(
+      "7/12 (일) 11:30 : 1명, 홍길동",
+      settings.serviceSchedules,
+      settings.carSchedules,
+      2026,
+    );
+
+    expect(result.serviceVotes[0].scheduleKey).toBe("2026-07-12 11:30");
+  });
   it("splits OCR-style comma separated Kakao poll text into schedule sections", () => {
     const settings = createDefaultSettings("2025-12");
     const result = parseVoteText(

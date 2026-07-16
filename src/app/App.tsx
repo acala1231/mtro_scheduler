@@ -143,7 +143,7 @@ export function App() {
     clearVoteImage,
     setVoteImageDialogOpen,
     setVoteImageZoom,
-  } = useVoteOcr({ month, settings, members, updateVotes, updateSettingsAndVotes });
+  } = useVoteOcr({ month, settings, members, updateSettingsAndVotes });
   useBackButtonClose(voteImageDialogOpen, () => setVoteImageDialogOpen(false));
   const currentWorkflowIndex = WORKFLOW_STEPS.findIndex((item) => item.id === step);
   const appBarTitle = step === "home" ? "복사단 일정표" : (STEPS.find((item) => item.id === step)?.label ?? "복사단 일정표");

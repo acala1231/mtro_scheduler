@@ -6,19 +6,77 @@ describe("localScheduleStore", () => {
     vi.stubGlobal("localStorage", { getItem: vi.fn(), setItem: vi.fn(), removeItem: vi.fn() });
   });
 
-  it("저장소 읽기가 실패해도 빈 v2 스냅샷을 반환한다", () => {
+  it("저장소 읽기가 실패해도 빈 v3 스냅샷을 반환한다", () => {
     vi.mocked(localStorage.getItem).mockImplementation(() => { throw new Error("blocked"); });
-    expect(loadSnapshot("2026-07")).toMatchObject({ version: 2, month: "2026-07" });
+    expect(loadSnapshot("2026-07")).toMatchObject({ version: 3, month: "2026-07" });
   });
 
   it("손상되거나 다른 월의 데이터는 사용하지 않는다", () => {
     vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ version: 1, month: "2025-01", updatedAt: 3 }));
-    expect(loadSnapshot("2026-07")).toMatchObject({ version: 2, month: "2026-07" });
+    expect(loadSnapshot("2026-07")).toMatchObject({ version: 3, month: "2026-07" });
   });
 
-  it("v1 스냅샷을 v2로 읽는다", () => {
+  it("v1 스냅샷을 일정 출처 없는 v3로 읽어 기존 일정을 보존한다", () => {
     vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ version: 1, month: "2026-07", updatedAt: "now" }));
-    expect(loadSnapshot("2026-07")).toMatchObject({ version: 2, month: "2026-07", updatedAt: "now" });
+    expect(loadSnapshot("2026-07")).toMatchObject({ version: 3, month: "2026-07", updatedAt: "now" });
+  });
+
+  it("v3 일정의 OCR 출처를 검증해 읽는다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 3, month: "2026-07", updatedAt: "now",
+      settings: {
+        month: "2026-07", titleColor: "#000", headerColor: "#fff", carSchedules: [],
+        serviceSchedules: [{ key: "2026-07-12 11:00", date: "2026-07-12", time: "11:00", displayDate: "7/12 (일) 11:00", baseRoles: [], subRoles: [], source: "ocr" }],
+      },
+    }));
+    expect(loadSnapshot("2026-07").settings?.serviceSchedules[0].source).toBe("ocr");
+  });
+
+  it("v2의 출처 없는 기존 일정을 v3에서도 보존한다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 2, month: "2026-07", updatedAt: "now",
+      settings: {
+        month: "2026-07", titleColor: "#000", headerColor: "#fff", carSchedules: [],
+        serviceSchedules: [{ key: "2026-07-12 11:00", date: "2026-07-12", time: "11:00", displayDate: "7/12 (일) 11:00", baseRoles: [], subRoles: [] }],
+      },
+    }));
+    expect(loadSnapshot("2026-07").settings?.serviceSchedules[0]).toMatchObject({
+      key: "2026-07-12 11:00",
+    });
+    expect(loadSnapshot("2026-07").settings?.serviceSchedules[0]).not.toHaveProperty("source");
+  });
+
+  it("v2 일정에 저장된 OCR 출처를 제거해 영구 일정으로 보존한다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 2, month: "2026-07", updatedAt: "now",
+      settings: {
+        month: "2026-07", titleColor: "#000", headerColor: "#fff", carSchedules: [],
+        serviceSchedules: [{ key: "2026-07-12 11:00", date: "2026-07-12", time: "11:00", displayDate: "7/12 (일) 11:00", baseRoles: [], subRoles: [], source: "ocr" }],
+      },
+    }));
+    expect(loadSnapshot("2026-07").settings?.serviceSchedules[0]).not.toHaveProperty("source");
+  });
+
+  it("v3의 알 수 없는 일정 출처만 제거하고 나머지 스냅샷을 보존한다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 3, month: "2026-07", updatedAt: "now",
+      settings: {
+        month: "2026-07", titleColor: "#000", headerColor: "#fff", carSchedules: [],
+        serviceSchedules: [{ key: "2026-07-12 11:00", date: "2026-07-12", time: "11:00", displayDate: "7/12", baseRoles: [], subRoles: [], source: "external" }],
+      },
+      votes: { month: "2026-07", rawText: "원문", serviceVotes: [], carVotes: [] },
+      result: { generatedAt: "now", serviceRows: [], carRows: [], updatedMembers: [], issues: [] },
+    }));
+    const snapshot = loadSnapshot("2026-07");
+    expect(snapshot.settings?.serviceSchedules[0]).not.toHaveProperty("source");
+    expect(snapshot.votes?.rawText).toBe("원문");
+    expect(snapshot.result?.generatedAt).toBe("now");
+  });
+
+  it("스냅샷을 v3로 저장한다", () => {
+    expect(saveSnapshot({ version: 2, month: "2026-07", updatedAt: "old" })).toBe(true);
+    const saved = JSON.parse(vi.mocked(localStorage.setItem).mock.calls[0][1]);
+    expect(saved).toMatchObject({ version: 3, month: "2026-07" });
   });
 
   it("배열 내부 일정 구조가 손상되면 안전한 빈 스냅샷으로 폴백한다", () => {

@@ -107,14 +107,14 @@ export function addVoteSchedulesToSettings(
     const parts = scheduleParts(key);
     if (!parts) return [];
     serviceKeys.add(key);
-    return [createServiceSchedule(parts.date, parts.time)];
+    return [{ ...createServiceSchedule(parts.date, parts.time), source: "ocr" as const }];
   });
   const addedCarSchedules = carScheduleKeys.flatMap((key) => {
     if (carKeys.has(key)) return [];
     const parts = scheduleParts(key);
     if (!parts) return [];
     carKeys.add(key);
-    return [createCarSchedule(parts.date, parts.time)];
+    return [{ ...createCarSchedule(parts.date, parts.time), source: "ocr" as const }];
   });
 
   if (addedServiceSchedules.length === 0 && addedCarSchedules.length === 0) return settings;
@@ -122,6 +122,14 @@ export function addVoteSchedulesToSettings(
     ...settings,
     serviceSchedules: [...settings.serviceSchedules, ...addedServiceSchedules],
     carSchedules: [...settings.carSchedules, ...addedCarSchedules],
+  };
+}
+
+export function removeOcrSchedules(settings: ScheduleSettings): ScheduleSettings {
+  return {
+    ...settings,
+    serviceSchedules: settings.serviceSchedules.filter(({ source }) => source !== "ocr"),
+    carSchedules: settings.carSchedules.filter(({ source }) => source !== "ocr"),
   };
 }
 
@@ -164,18 +172,20 @@ export function createCarSchedule(date: string, time: string): CarSchedule {
 }
 
 export function refreshServiceSchedule(schedule: ServiceSchedule): ServiceSchedule {
+  const { source: _source, ...permanentSchedule } = schedule;
   const key = makeScheduleKey(schedule.date, schedule.time);
   return {
-    ...schedule,
+    ...permanentSchedule,
     key,
     displayDate: formatKoreanDateTime(schedule.date, schedule.time),
   };
 }
 
 export function refreshCarSchedule(schedule: CarSchedule): CarSchedule {
+  const { source: _source, ...permanentSchedule } = schedule;
   const key = makeScheduleKey(schedule.date, schedule.time);
   return {
-    ...schedule,
+    ...permanentSchedule,
     key,
     displayDate: formatKoreanDateTime(schedule.date, schedule.time),
   };
