@@ -5,6 +5,7 @@ import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain
 import { rebalanceAliasVotes, type OcrResolvedVoteEntry } from "../../domain/voteAliasRebalance";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
 import { mergeScheduleOcrText } from "../../domain/ocrImageProcessing";
+import { addVoteSchedulesToSettings } from "../../domain/scheduleSettings";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse, type PreparedOcrVariant } from "../appUtils";
 
@@ -33,14 +34,16 @@ export function useVoteOcr({
   month,
   settings,
   members,
-  votes,
   updateVotes,
+  updateSettingsAndVotes,
 }: {
   month: string;
   settings: ScheduleSettings;
   members: Member[];
-  votes: VoteData;
   updateVotes: (votes: VoteData) => void;
+  updateSettingsAndVotes: (
+    updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
+  ) => void;
 }) {
   const [voteImageName, setVoteImageName] = useState("");
   const [voteImagePreviewUrl, setVoteImagePreviewUrl] = useState("");
@@ -100,19 +103,25 @@ export function useVoteOcr({
       carVotes: bestAttempt.parsed.carVotes.map((entry) => ({ entry, matchedByAlias: false })),
     };
     const rebalanced = rebalanceAliasVotes({ ...resolvedVotes, voteCounts: bestAttempt.parsed.voteCounts });
-    const next = {
-      ...votes,
-      month,
-      rawText: bestAttempt.sanitizedRawText,
-      serviceVotes: hasMonthMismatch ? [] : rebalanced.serviceVotes.map(({ entry }) => entry),
-      carVotes: hasMonthMismatch ? [] : rebalanced.carVotes.map(({ entry }) => entry),
-    };
+    const serviceVotes = hasMonthMismatch ? [] : rebalanced.serviceVotes.map(({ entry }) => entry);
+    const carVotes = hasMonthMismatch ? [] : rebalanced.carVotes.map(({ entry }) => entry);
     setVoteConversionError(
       hasMonthMismatch
         ? `기준월과 투표결과 이미지의 월이 다릅니다. 기준월: ${monthTitle(month)}, 이미지: ${mismatchedMonths.map(monthTitle).join(", ")}`
         : "",
     );
-    updateVotes(next);
+    updateSettingsAndVotes(({ settings: latestSettings, votes: latestVotes }) => ({
+      settings: hasMonthMismatch
+        ? latestSettings
+        : addVoteSchedulesToSettings(latestSettings, serviceVotes, carVotes, bestAttempt.parsed.voteCounts),
+      votes: {
+        ...latestVotes,
+        month,
+        rawText: bestAttempt.sanitizedRawText,
+        serviceVotes,
+        carVotes,
+      },
+    }));
   }
 
   async function recognizeVoteImage(
@@ -181,7 +190,9 @@ export function useVoteOcr({
           }));
         }
         const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
+        if (requestId !== requestIdRef.current) return;
         applyVoteOcrAttempt(bestAttempt);
+        if (requestId !== requestIdRef.current) return;
         setVoteConversionProgress(100);
       } finally {
         await worker.terminate();

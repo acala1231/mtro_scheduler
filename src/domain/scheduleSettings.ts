@@ -1,4 +1,4 @@
-import { BASE_ROLES, type CarSchedule, type ScheduleSettings, type ServiceSchedule, type VoteData, type VoteEntry } from "./scheduleTypes";
+import { BASE_ROLES, type CarSchedule, type ScheduleSettings, type ServiceSchedule, type VoteCountInfo, type VoteData, type VoteEntry } from "./scheduleTypes";
 import { formatKoreanDateTime, makeScheduleKey } from "./dateTime";
 
 type MigratableSchedule = { key: string; displayDate: string };
@@ -78,6 +78,51 @@ export function ensureDefaultScheduleData(settings: ScheduleSettings): ScheduleS
 
 export function dedupeSchedulesByKey<TSchedule extends { key: string }>(schedules: TSchedule[]): TSchedule[] {
   return [...new Map(schedules.map((schedule) => [schedule.key, schedule])).values()];
+}
+
+function scheduleParts(scheduleKey: string): { date: string; time: string } | undefined {
+  const match = scheduleKey.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/);
+  return match ? { date: match[1], time: match[2] } : undefined;
+}
+
+export function addVoteSchedulesToSettings(
+  settings: ScheduleSettings,
+  serviceVotes: VoteEntry[],
+  carVotes: VoteEntry[],
+  voteCounts: VoteCountInfo[] = [],
+): ScheduleSettings {
+  const serviceKeys = new Set(settings.serviceSchedules.map(({ key }) => key));
+  const carKeys = new Set(settings.carSchedules.map(({ key }) => key));
+  const serviceScheduleKeys = [
+    ...serviceVotes.map(({ scheduleKey }) => scheduleKey),
+    ...voteCounts.filter(({ kind }) => kind === "service").map(({ scheduleKey }) => scheduleKey),
+  ];
+  const carScheduleKeys = [
+    ...carVotes.map(({ scheduleKey }) => scheduleKey),
+    ...voteCounts.filter(({ kind }) => kind === "car").map(({ scheduleKey }) => scheduleKey),
+  ];
+
+  const addedServiceSchedules = serviceScheduleKeys.flatMap((key) => {
+    if (serviceKeys.has(key)) return [];
+    const parts = scheduleParts(key);
+    if (!parts) return [];
+    serviceKeys.add(key);
+    return [createServiceSchedule(parts.date, parts.time)];
+  });
+  const addedCarSchedules = carScheduleKeys.flatMap((key) => {
+    if (carKeys.has(key)) return [];
+    const parts = scheduleParts(key);
+    if (!parts) return [];
+    carKeys.add(key);
+    return [createCarSchedule(parts.date, parts.time)];
+  });
+
+  if (addedServiceSchedules.length === 0 && addedCarSchedules.length === 0) return settings;
+  return {
+    ...settings,
+    serviceSchedules: [...settings.serviceSchedules, ...addedServiceSchedules],
+    carSchedules: [...settings.carSchedules, ...addedCarSchedules],
+  };
 }
 
 export function makeUniqueScheduleTime(date: string, preferredTime: string, existingKeys: string[]): string {

@@ -1,8 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange } from "./scheduleSettings";
+import { addVoteSchedulesToSettings, createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange } from "./scheduleSettings";
 import type { ServiceSchedule } from "./scheduleTypes";
 
 describe("createDefaultSettings", () => {
+  it("이미지 투표에서 찾은 미등록 일정을 일반/차량 일정에 추가한다", () => {
+    const settings = {
+      ...createDefaultSettings("2026-07"),
+      serviceSchedules: [],
+      carSchedules: [],
+    };
+
+    const next = addVoteSchedulesToSettings(
+      settings,
+      [{ scheduleKey: "2026-07-12 10:30", displayText: "7/12 (일) 10:30", name: "홍길동", source: "ocr" }],
+      [{ scheduleKey: "2026-07-12 09:20", displayText: "7/12 (일) 09:20", name: "김철수", source: "ocr" }],
+    );
+
+    expect(next.serviceSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 10:30", date: "2026-07-12", time: "10:30" })]);
+    expect(next.carSchedules).toEqual([expect.objectContaining({ key: "2026-07-12 09:20", date: "2026-07-12", time: "09:20" })]);
+  });
+
+  it("이미 등록된 투표 일정은 중복 추가하지 않는다", () => {
+    const settings = createDefaultSettings("2026-07");
+    const schedule = settings.serviceSchedules[0];
+
+    const next = addVoteSchedulesToSettings(settings, [{ scheduleKey: schedule.key, name: "홍길동" }], []);
+
+    expect(next.serviceSchedules).toHaveLength(settings.serviceSchedules.length);
+  });
+
+  it("OCR 도중 추가된 기존 일정은 보존하고 투표자가 없는 이미지 일정도 병합한다", () => {
+    const editedSchedule = createServiceSchedule("2026-07-03", "18:00");
+    const settings = { ...createDefaultSettings("2026-07"), serviceSchedules: [editedSchedule], carSchedules: [] };
+
+    const next = addVoteSchedulesToSettings(settings, [], [], [
+      { scheduleKey: "2026-07-12 11:00", displayText: "7/12 (일) 11:00", kind: "service", expectedCount: 0 },
+    ]);
+
+    expect(next.serviceSchedules.map(({ key }) => key)).toEqual([editedSchedule.key, "2026-07-12 11:00"]);
+  });
   it("일정 key가 바뀌면 같은 위치의 투표를 새 key로 이관한다", () => {
     const previous = createDefaultSettings("2026-07");
     const next = { ...previous, serviceSchedules: previous.serviceSchedules.map((item, index) => index === 0 ? createServiceSchedule(item.date, "10:30") : item) };

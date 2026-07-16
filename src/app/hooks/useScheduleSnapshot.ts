@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { loadLastMonth, loadSnapshot, mergeSnapshot } from "../../data/localScheduleStore";
 import { createDefaultSettings, dedupeSchedulesByKey, ensureDefaultScheduleData, migrateVotesForSettingsChange } from "../../domain/scheduleSettings";
 import type { GenerateScheduleResult, ScheduleSettings, VoteData } from "../../domain/scheduleTypes";
@@ -11,11 +11,16 @@ export function useScheduleSnapshot() {
   const [votes, setVotes] = useState<VoteData>(() => ({ month: initialMonth, rawText: "", serviceVotes: [], carVotes: [] }));
   const [result, setResult] = useState<GenerateScheduleResult | undefined>();
   const [savedState, setSavedState] = useState("저장됨");
+  const settingsRef = useRef(settings);
+  const votesRef = useRef(votes);
 
   useEffect(() => {
     const snapshot = loadSnapshot(month);
     const nextSettings = sortSettingsSchedules(ensureDefaultScheduleData(snapshot.settings ?? createDefaultSettings(month)));
-    setVotes(snapshot.votes ?? { month, rawText: "", serviceVotes: [], carVotes: [] });
+    const nextVotes = snapshot.votes ?? { month, rawText: "", serviceVotes: [], carVotes: [] };
+    votesRef.current = nextVotes;
+    settingsRef.current = nextSettings;
+    setVotes(nextVotes);
     setResult(snapshot.result);
     setSettings(nextSettings);
     if (!snapshot.settings || snapshot.settings.serviceSchedules.length === 0 || snapshot.settings.carSchedules.length === 0) {
@@ -36,16 +41,36 @@ export function useScheduleSnapshot() {
       carSchedules: dedupeSchedulesByKey(next.carSchedules),
     });
     setSettings(sortedSettings);
-    const migratedVotes = migrateVotesForSettingsChange(settings, sortedSettings, votes, replacements);
+    const migratedVotes = migrateVotesForSettingsChange(settingsRef.current, sortedSettings, votesRef.current, replacements);
+    settingsRef.current = sortedSettings;
+    votesRef.current = migratedVotes;
     setVotes(migratedVotes);
     setResult(undefined);
     persist({ settings: sortedSettings, votes: migratedVotes, result: undefined });
   }
 
   function updateVotes(next: VoteData) {
+    votesRef.current = next;
     setVotes(next);
     setResult(undefined);
     persist({ votes: next, result: undefined });
+  }
+
+  function updateSettingsAndVotes(
+    updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
+  ) {
+    const next = updater({ settings: settingsRef.current, votes: votesRef.current });
+    const sortedSettings = sortSettingsSchedules({
+      ...next.settings,
+      serviceSchedules: dedupeSchedulesByKey(next.settings.serviceSchedules),
+      carSchedules: dedupeSchedulesByKey(next.settings.carSchedules),
+    });
+    settingsRef.current = sortedSettings;
+    votesRef.current = next.votes;
+    setSettings(sortedSettings);
+    setVotes(next.votes);
+    setResult(undefined);
+    persist({ settings: sortedSettings, votes: next.votes, result: undefined });
   }
 
   function updateResult(next: GenerateScheduleResult) {
@@ -68,6 +93,7 @@ export function useScheduleSnapshot() {
     setSavedState,
     updateSettings,
     updateVotes,
+    updateSettingsAndVotes,
     updateResult,
     invalidateResult,
   };
