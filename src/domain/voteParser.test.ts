@@ -9,7 +9,7 @@ describe("parseVoteText", () => {
       ...createDefaultSettings("2026-07"),
       serviceSchedules: [previousOcr],
       carSchedules: [],
-    });
+    }, "all");
 
     const result = parseVoteText(
       "7/12 (일) 11:30 : 1명, 홍길동",

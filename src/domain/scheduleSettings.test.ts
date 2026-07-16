@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addVoteSchedulesToSettings, createCarSchedule, createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange, refreshCarSchedule, refreshServiceSchedule, removeOcrSchedules } from "./scheduleSettings";
+import { addVoteSchedulesToSettings, createCarSchedule, createDefaultSettings, createServiceSchedule, ensureDefaultScheduleData, makeUniqueScheduleTime, migrateVotesForSettingsChange, refreshCarSchedule, refreshServiceSchedule, removeOcrSchedules, resetOcrVoteSection } from "./scheduleSettings";
 import type { ServiceSchedule } from "./scheduleTypes";
 
 describe("createDefaultSettings", () => {
@@ -24,7 +24,7 @@ describe("createDefaultSettings", () => {
     const ocr = { ...createServiceSchedule("2026-07-12", "10:30"), source: "ocr" as const };
     const settings = { ...createDefaultSettings("2026-07"), serviceSchedules: [manual, ocr] };
 
-    const next = removeOcrSchedules(settings);
+    const next = removeOcrSchedules(settings, "all");
 
     expect(next.serviceSchedules).toEqual([manual]);
     expect(next.carSchedules).toHaveLength(settings.carSchedules.length);
@@ -47,12 +47,47 @@ describe("createDefaultSettings", () => {
     const settings = { ...createDefaultSettings("2026-07"), serviceSchedules: [previousOcr], carSchedules: [] };
 
     const next = addVoteSchedulesToSettings(
-      removeOcrSchedules(settings),
+      removeOcrSchedules(settings, "all"),
       [{ scheduleKey: "2026-07-12 11:30", displayText: "7/12 (일) 11:30", name: "홍길동", source: "ocr" }],
       [],
     );
 
     expect(next.serviceSchedules.map(({ key }) => key)).toEqual(["2026-07-12 11:30"]);
+  });
+  it("복사 투표 초기화는 복사 OCR 일정과 투표만 제거한다", () => {
+    const permanentService = createServiceSchedule("2026-07-05", "11:00");
+    const ocrService = { ...createServiceSchedule("2026-07-12", "11:30"), source: "ocr" as const };
+    const permanentCar = createCarSchedule("2026-07-05", "09:40");
+    const ocrCar = { ...createCarSchedule("2026-07-12", "10:00"), source: "ocr" as const };
+    const settings = {
+      ...createDefaultSettings("2026-07"),
+      serviceSchedules: [permanentService, ocrService],
+      carSchedules: [permanentCar, ocrCar],
+    };
+    const votes = {
+      month: "2026-07", rawText: "OCR", serviceVotes: [{ scheduleKey: ocrService.key, name: "홍길동" }],
+      carVotes: [{ scheduleKey: ocrCar.key, name: "김철수" }],
+    };
+
+    const next = resetOcrVoteSection(settings, votes, "service");
+
+    expect(next.settings.serviceSchedules).toEqual([permanentService]);
+    expect(next.settings.carSchedules).toEqual([permanentCar, ocrCar]);
+    expect(next.votes.serviceVotes).toEqual([]);
+    expect(next.votes.carVotes).toEqual(votes.carVotes);
+  });
+
+  it("차량 투표 초기화는 차량 OCR 일정만 제거하고 편집해 영구 전환된 일정은 유지한다", () => {
+    const promoted = createCarSchedule("2026-07-12", "10:00");
+    const ocrCar = { ...createCarSchedule("2026-07-19", "10:00"), source: "ocr" as const };
+    const settings = { ...createDefaultSettings("2026-07"), carSchedules: [promoted, ocrCar] };
+    const votes = { month: "2026-07", rawText: "OCR", serviceVotes: [{ scheduleKey: "service", name: "홍길동" }], carVotes: [{ scheduleKey: ocrCar.key, name: "김철수" }] };
+
+    const next = resetOcrVoteSection(settings, votes, "car");
+
+    expect(next.settings.carSchedules).toEqual([promoted]);
+    expect(next.votes.carVotes).toEqual([]);
+    expect(next.votes.serviceVotes).toEqual(votes.serviceVotes);
   });
 
   it("이미 등록된 투표 일정은 중복 추가하지 않는다", () => {

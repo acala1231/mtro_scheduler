@@ -156,9 +156,9 @@ export function useVoteOcr({
   async function convertVoteImage(file: File) {
     const requestId = ++requestIdRef.current;
     setIsVoteConverting(true);
-    let requestSettings = removeOcrSchedules(settings);
+    let requestSettings = removeOcrSchedules(settings, "all");
     updateSettingsAndVotes(({ settings: latestSettings }) => {
-      requestSettings = removeOcrSchedules(latestSettings);
+      requestSettings = removeOcrSchedules(latestSettings, "all");
       return {
         settings: requestSettings,
         votes: { month, rawText: "", serviceVotes: [], carVotes: [] },

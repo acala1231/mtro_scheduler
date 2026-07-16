@@ -47,7 +47,9 @@ export function VotesScreen({
   const resetVoteEntries = (kind: "service" | "car") => {
     confirm({
       title: kind === "service" ? "복사일정 투표결과를 초기화할까요?" : "차량봉사 투표결과를 초기화할까요?",
-      message: "현재 입력된 투표결과 명단을 모두 삭제합니다.",
+      message: kind === "service"
+        ? "현재 입력된 복사일정 투표 명단과 이미지에서 자동 추가된 복사일정을 삭제합니다. 직접 등록하거나 편집한 일정은 유지됩니다."
+        : "현재 입력된 차량봉사 투표 명단과 이미지에서 자동 추가된 차량봉사일정을 삭제합니다. 직접 등록하거나 편집한 일정은 유지됩니다.",
       confirmText: "초기화",
       confirmColor: "warning",
       onConfirm: () => resetVotes(kind),
@@ -160,7 +162,7 @@ export function VotesScreen({
         <AccordionDetails>
           <Stack spacing={2}>
             <Stack direction="row" sx={{ flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
-              <Button variant="outlined" color="warning" onClick={() => resetVoteEntries("service")}>
+              <Button variant="outlined" color="warning" disabled={isVoteConverting} onClick={() => resetVoteEntries("service")}>
                 초기화
               </Button>
             </Stack>
@@ -181,7 +183,7 @@ export function VotesScreen({
         <AccordionDetails>
           <Stack spacing={2}>
             <Stack direction="row" sx={{ flexWrap: "wrap", justifyContent: "flex-end", gap: 1 }}>
-              <Button variant="outlined" color="warning" onClick={() => resetVoteEntries("car")}>
+              <Button variant="outlined" color="warning" disabled={isVoteConverting} onClick={() => resetVoteEntries("car")}>
                 초기화
               </Button>
             </Stack>

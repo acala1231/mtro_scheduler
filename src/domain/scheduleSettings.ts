@@ -125,11 +125,22 @@ export function addVoteSchedulesToSettings(
   };
 }
 
-export function removeOcrSchedules(settings: ScheduleSettings): ScheduleSettings {
+export function removeOcrSchedules(settings: ScheduleSettings, scope: "service" | "car" | "all"): ScheduleSettings {
   return {
     ...settings,
-    serviceSchedules: settings.serviceSchedules.filter(({ source }) => source !== "ocr"),
-    carSchedules: settings.carSchedules.filter(({ source }) => source !== "ocr"),
+    serviceSchedules: scope === "car" ? settings.serviceSchedules : settings.serviceSchedules.filter(({ source }) => source !== "ocr"),
+    carSchedules: scope === "service" ? settings.carSchedules : settings.carSchedules.filter(({ source }) => source !== "ocr"),
+  };
+}
+
+export function resetOcrVoteSection(
+  settings: ScheduleSettings,
+  votes: VoteData,
+  kind: "service" | "car",
+): { settings: ScheduleSettings; votes: VoteData } {
+  return {
+    settings: removeOcrSchedules(settings, kind),
+    votes: kind === "service" ? { ...votes, serviceVotes: [] } : { ...votes, carVotes: [] },
   };
 }
 

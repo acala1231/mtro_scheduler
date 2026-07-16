@@ -171,6 +171,7 @@ export function App() {
     previewRef,
     updateSettings,
     updateVotes,
+    updateSettingsAndVotes,
     updateResult,
     setSavedState,
   });

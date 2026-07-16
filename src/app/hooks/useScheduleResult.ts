@@ -9,6 +9,7 @@ import {
   makeUniqueScheduleTime,
   refreshCarSchedule,
   refreshServiceSchedule,
+  resetOcrVoteSection,
 } from "../../domain/scheduleSettings";
 import type {
   CarResultRow,
@@ -33,6 +34,7 @@ export function useScheduleResult({
   previewRef,
   updateSettings,
   updateVotes,
+  updateSettingsAndVotes,
   updateResult,
   setSavedState,
 }: {
@@ -45,6 +47,9 @@ export function useScheduleResult({
   previewRef: RefObject<HTMLDivElement | null>;
   updateSettings: (settings: ScheduleSettings, replacements?: { service?: Map<string, string>; car?: Map<string, string> }) => void;
   updateVotes: (votes: VoteData) => void;
+  updateSettingsAndVotes: (
+    updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
+  ) => void;
   updateResult: (result: GenerateScheduleResult) => void;
   setSavedState: (state: string) => void;
 }) {
@@ -108,8 +113,9 @@ export function useScheduleResult({
   }
 
   function resetVotes(kind: "service" | "car") {
-    const key = kind === "service" ? "serviceVotes" : "carVotes";
-    updateVotes({ ...votes, [key]: [] });
+    updateSettingsAndVotes(({ settings: latestSettings, votes: latestVotes }) =>
+      resetOcrVoteSection(latestSettings, latestVotes, kind),
+    );
   }
 
   function replaceVoteSchedule(kind: "service" | "car", schedule: ServiceSchedule | CarSchedule, names: string[]) {
