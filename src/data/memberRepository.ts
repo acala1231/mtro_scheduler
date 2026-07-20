@@ -1,5 +1,6 @@
 import { BASE_ROLES, COUNT_ROLES, type CountRole, type Member, type MembersFile } from "../domain/scheduleTypes";
 import { membersFromCsv } from "./memberCsv";
+import { normalizeFeastDay } from "../domain/feastDay";
 
 const MEMBERS_STORAGE_KEY = "schedule.membersFile";
 const MAX_MEMBERS_CSV_FILE_BYTES = 2 * 1024 * 1024;
@@ -9,6 +10,7 @@ function emptyCounts(): Member["counts"] {
 }
 
 function normalizeMember(raw: Partial<Member>, options: { preserveCounts: boolean }): Member {
+  if (raw.feastDay !== undefined && typeof raw.feastDay !== "string") throw new Error("저장된 축일 형식이 올바르지 않습니다.");
   const counts = options.preserveCounts
     ? (Object.fromEntries(COUNT_ROLES.map((role) => [role, Math.max(0, Number(raw.counts?.[role as CountRole] ?? 0))])) as Member["counts"])
     : emptyCounts();
@@ -17,6 +19,7 @@ function normalizeMember(raw: Partial<Member>, options: { preserveCounts: boolea
     id: typeof raw.id === "string" && raw.id.trim() ? raw.id : crypto.randomUUID(),
     name: String(raw.name ?? "").trim(),
     baptismalName: String(raw.baptismalName ?? "").trim(),
+    feastDay: normalizeFeastDay(raw.feastDay),
     alias: String(raw.alias ?? "").trim(),
     roles,
     counts,
@@ -32,7 +35,7 @@ function normalizeMembersFile(data: Partial<MembersFile> | Partial<Member>[], op
   }
 
   return {
-    version: Array.isArray(data) ? "browser-csv" : String(data.version || "unknown"),
+    version: "browser-v2",
     updatedAt: Array.isArray(data) ? "" : String(data.updatedAt || ""),
     members,
   };
@@ -45,7 +48,7 @@ export function loadStoredMembers(): MembersFile | null {
 
     const parsed = JSON.parse(raw) as Partial<MembersFile>;
     const normalized = normalizeMembersFile(parsed, { preserveCounts: true });
-    if (parsed.members?.some((member) => !member.id)) saveStoredMembers(normalized);
+    if (parsed.version !== "browser-v2" || parsed.members?.some((member) => !member.id || member.feastDay === undefined)) saveStoredMembers(normalized);
     return normalized;
   } catch {
     try {

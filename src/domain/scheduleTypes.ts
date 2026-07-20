@@ -22,6 +22,7 @@ export type Member = {
   id?: string;
   name: string;
   baptismalName?: string;
+  feastDay?: string;
   alias?: string;
   roles: Record<BaseRole, boolean>;
   counts: Record<CountRole, number>;

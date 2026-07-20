@@ -189,6 +189,7 @@ export function MembersScreen({
                   member={{
                     name: "",
                     baptismalName: "",
+                    feastDay: "",
                     alias: "",
                     roles: { 정: true, 부: true, 향: true, 향합: true },
                     counts: { 전체: 0, 정: 0, 부: 0, 향: 0, 향합: 0, 초1: 0, 초2: 0, 십자가: 0, 차량: 0 },

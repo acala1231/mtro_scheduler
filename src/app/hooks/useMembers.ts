@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { loadStoredMembers, parseMembersCsvFile, removeStoredMembers, saveStoredMembers } from "../../data/memberRepository";
 import { BASE_ROLES, COUNT_ROLES, type GenerateScheduleResult, type Member, type MembersFile } from "../../domain/scheduleTypes";
+import { compareMembersByFeastDay, normalizeFeastDay } from "../../domain/feastDay";
 
 export type VisibleMember = {
   key: string;
@@ -27,6 +28,7 @@ function completeMember(patch: Partial<Member>): Member {
     id: crypto.randomUUID(),
     name: String(patch.name ?? "").trim(),
     baptismalName: String(patch.baptismalName ?? "").trim(),
+    feastDay: normalizeFeastDay(patch.feastDay),
     alias: String(patch.alias ?? "").trim(),
     roles: Object.fromEntries(BASE_ROLES.map((role) => [role, Boolean(patch.roles?.[role])])) as Member["roles"],
     counts: patch.counts ?? emptyMemberCounts(),
@@ -39,6 +41,7 @@ function mergeMember(currentMember: Member, patch: Partial<Member>): Member {
     ...patch,
     name: patch.name === undefined ? currentMember.name : String(patch.name).trim(),
     baptismalName: patch.baptismalName === undefined ? currentMember.baptismalName : String(patch.baptismalName).trim(),
+    feastDay: patch.feastDay === undefined ? currentMember.feastDay : normalizeFeastDay(patch.feastDay),
     alias: patch.alias === undefined ? currentMember.alias : String(patch.alias).trim(),
     roles: patch.roles ? { ...currentMember.roles, ...patch.roles } : currentMember.roles,
     counts: patch.counts ? { ...currentMember.counts, ...patch.counts } : currentMember.counts,
@@ -106,7 +109,13 @@ export function useMembers({
     const currentMember = sourceMembersFile.members[index];
     if (!currentMember) return false;
 
-    const nextMember = mergeMember(currentMember, patch);
+    let nextMember: Member;
+    try {
+      nextMember = mergeMember(currentMember, patch);
+    } catch {
+      setMemberError("축일은 실제 날짜를 MM/dd 형식으로 입력해 주세요.");
+      return false;
+    }
     const nextDuplicateKey = duplicateMemberKey(nextMember);
     const duplicatedMember = sourceMembersFile.members.some(
       (member, memberIndex) => memberIndex !== index && duplicateMemberKey(member) === nextDuplicateKey,
@@ -134,7 +143,13 @@ export function useMembers({
   }
 
   function addMember(patch: Partial<Member>): boolean {
-    const nextMember = completeMember(patch);
+    let nextMember: Member;
+    try {
+      nextMember = completeMember(patch);
+    } catch {
+      setMemberError("축일은 실제 날짜를 MM/dd 형식으로 입력해 주세요.");
+      return false;
+    }
 
     if (!nextMember.name) {
       setMemberError("이름을 입력해 주세요.");
@@ -193,7 +208,8 @@ export function useMembers({
     const query = memberQuery.trim();
     return (membersFile?.members ?? [])
       .map((member, index) => ({ key: memberKey(member, index), index, member }))
-      .filter(({ member }) => [member.name, member.baptismalName, member.alias].some((value) => value?.includes(query)));
+      .filter(({ member }) => [member.name, member.baptismalName, member.feastDay, member.alias].some((value) => value?.includes(query)))
+      .sort((left, right) => compareMembersByFeastDay(left.member, right.member));
   }
 
   return {

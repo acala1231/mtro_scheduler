@@ -119,6 +119,24 @@ describe("localScheduleStore", () => {
     expect(loadSnapshot("2026-07").result?.updatedMembers[0].alias).toBe("H");
   });
 
+  it("결과 명단의 선택적 축일 문자열만 허용한다", () => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 3, month: "2026-07", updatedAt: "now",
+      result: { generatedAt: "now", serviceRows: [], carRows: [], issues: [], updatedMembers: [{ name: "홍길동", feastDay: "06/29", roles: {}, counts: {} }] },
+    }));
+    expect(loadSnapshot("2026-07").result?.updatedMembers[0].feastDay).toBe("06/29");
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 3, month: "2026-07", updatedAt: "now",
+      result: { generatedAt: "now", serviceRows: [], carRows: [], issues: [], updatedMembers: [{ name: "홍길동", feastDay: 629, roles: {}, counts: {} }] },
+    }));
+    expect(loadSnapshot("2026-07").result).toBeUndefined();
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({
+      version: 3, month: "2026-07", updatedAt: "now",
+      result: { generatedAt: "now", serviceRows: [], carRows: [], issues: [], updatedMembers: [{ name: "홍길동", feastDay: "02/30", roles: {}, counts: {} }] },
+    }));
+    expect(loadSnapshot("2026-07").result).toBeUndefined();
+  });
+
   it("쓰기 실패를 throw하지 않고 false로 알린다", () => {
     vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error("quota"); });
     expect(saveSnapshot({ version: 2, month: "2026-07", updatedAt: "now" })).toBe(false);

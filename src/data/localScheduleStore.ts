@@ -1,4 +1,5 @@
 import type { GenerateScheduleResult, ScheduleSettings, VoteData } from "../domain/scheduleTypes";
+import { normalizeFeastDay } from "../domain/feastDay";
 
 const STORE_VERSION = 3;
 const LAST_MONTH_KEY = "schedule.lastMonth";
@@ -74,7 +75,16 @@ function isSnapshot(value: unknown, month: string): value is MonthSnapshot {
   const isSchedule = (item: unknown, service: boolean) => isRecord(item) && typeof item.key === "string" && typeof item.date === "string" && typeof item.time === "string" && typeof item.displayDate === "string" && (!service || (Array.isArray(item.baseRoles) && item.baseRoles.every((role) => typeof role === "string") && Array.isArray(item.subRoles) && item.subRoles.every((role) => typeof role === "string")));
   const isVote = (item: unknown) => isRecord(item) && typeof item.scheduleKey === "string" && typeof item.name === "string";
   const isOptionalString = (value: unknown) => value === undefined || typeof value === "string";
-  const isMember = (item: unknown) => isRecord(item) && typeof item.name === "string" && isOptionalString(item.id) && isOptionalString(item.baptismalName) && isOptionalString(item.alias) && isRecord(item.roles) && Object.values(item.roles).every((enabled) => typeof enabled === "boolean") && isRecord(item.counts) && Object.values(item.counts).every((count) => typeof count === "number" && Number.isFinite(count));
+  const isFeastDay = (value: unknown) => {
+    if (value === undefined) return true;
+    if (typeof value !== "string") return false;
+    try {
+      return normalizeFeastDay(value) === value;
+    } catch {
+      return false;
+    }
+  };
+  const isMember = (item: unknown) => isRecord(item) && typeof item.name === "string" && isOptionalString(item.id) && isOptionalString(item.baptismalName) && isFeastDay(item.feastDay) && isOptionalString(item.alias) && isRecord(item.roles) && Object.values(item.roles).every((enabled) => typeof enabled === "boolean") && isRecord(item.counts) && Object.values(item.counts).every((count) => typeof count === "number" && Number.isFinite(count));
   const isServiceRow = (item: unknown) => isRecord(item) && typeof item.displayDate === "string" && isOptionalString(item.note) && isRecord(item.roles) && Object.values(item.roles).every((name) => typeof name === "string");
   const isCarRow = (item: unknown) => isRecord(item) && typeof item.displayDate === "string" && typeof item.name === "string" && isOptionalString(item.note);
   const isIssue = (item: unknown) => {
