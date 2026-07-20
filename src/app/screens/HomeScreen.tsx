@@ -101,16 +101,16 @@ export function HomeScreen({
               px: 3,
               fontSize: "1.1rem",
               fontWeight: 900,
-              bgcolor: "#d6e9f8",
-              borderColor: "#79acd3",
-              color: "#164a73",
+              bgcolor: "action.selected",
+              borderColor: "primary.light",
+              color: "primary.dark",
               "&:hover": {
-                bgcolor: "#c4def1",
-                borderColor: "#5f9ccc",
+                bgcolor: "action.hover",
+                borderColor: "primary.main",
               },
             }}
           >
-            일정편집
+            <Stack><Typography component="span" sx={{ fontWeight: 900 }}>1단계 · 일정편집</Typography><Typography component="span" variant="caption">날짜와 역할을 확인합니다</Typography></Stack>
           </Button>
         </Grid>
         <Grid size={{ xs: 12, md: 6 }}>
@@ -127,16 +127,16 @@ export function HomeScreen({
               px: 3,
               fontSize: "1.1rem",
               fontWeight: 900,
-              bgcolor: "#dde3ea",
-              borderColor: "#8b97a6",
-              color: "#344054",
+              bgcolor: "background.paper",
+              borderColor: "divider",
+              color: "text.primary",
               "&:hover": {
-                bgcolor: "#ccd5df",
-                borderColor: "#758397",
+                bgcolor: "action.hover",
+                borderColor: "primary.main",
               },
             }}
           >
-            투표결과 입력
+            <Stack><Typography component="span" sx={{ fontWeight: 900 }}>2단계 · 투표결과</Typography><Typography component="span" variant="caption">이미지 또는 CSV로 가져옵니다</Typography></Stack>
           </Button>
         </Grid>
       </Grid>

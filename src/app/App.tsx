@@ -37,19 +37,16 @@ import { useBackButtonClose } from "./hooks/useBackButtonClose";
 import { useMembers } from "./hooks/useMembers";
 import { useScheduleResult } from "./hooks/useScheduleResult";
 import { useScheduleSnapshot } from "./hooks/useScheduleSnapshot";
-import { useVoteOcr } from "./hooks/useVoteOcr";
-import { useVoteCsvImport } from "./hooks/useVoteCsvImport";
+import { useVotesScreenModel } from "./hooks/useVotesScreenModel";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { VotesScreen } from "./screens/VotesScreen";
 import { MembersScreen } from "./screens/MembersScreen";
 
-const WORKFLOW_STEPS: Array<{ id: AppStep; number: number; label: string }> = [
-  { id: "home", number: 1, label: "홈" },
-  { id: "settings", number: 2, label: "일정편집" },
-  { id: "votes", number: 3, label: "투표결과" },
-  { id: "generate", number: 4, label: "일정표" },
+const WORKFLOW_STEPS: Array<{ id: AppStep; label: string }> = [
+  { id: "home", label: "홈" }, { id: "settings", label: "일정편집" },
+  { id: "votes", label: "투표결과" }, { id: "generate", label: "일정표" },
 ];
 
 function stepFromHash(): AppStep | undefined {
@@ -109,6 +106,7 @@ export function App() {
     members,
     membersFile,
     memberError,
+    memberSuccess,
     importMembers,
     clearMembers,
     addMember,
@@ -133,21 +131,6 @@ export function App() {
   const canGenerate = members.length > 0 && counts.errors === 0;
   const visibleMembers = visibleMembersForQuery(memberQuery);
   const selectedMonth = dayjs(firstDateOfMonth(month));
-  const {
-    voteImageName,
-    voteImagePreviewUrl,
-    voteImageDialogOpen,
-    voteImageZoom,
-    voteConversionProgress,
-    voteConversionError,
-    isVoteConverting,
-    selectVoteImage,
-    clearVoteImage,
-    setVoteImageDialogOpen,
-    setVoteImageZoom,
-  } = useVoteOcr({ month, settings, members, updateSettingsAndVotes });
-  const { voteCsvName, voteCsvError, isVoteCsvImporting, selectVoteCsv, clearVoteCsv } = useVoteCsvImport({ month, members, updateSettingsAndVotes });
-  useBackButtonClose(voteImageDialogOpen, () => setVoteImageDialogOpen(false));
   const currentWorkflowIndex = WORKFLOW_STEPS.findIndex((item) => item.id === step);
   const appBarTitle = step === "home" ? "복사단 일정표" : (STEPS.find((item) => item.id === step)?.label ?? "복사단 일정표");
   const {
@@ -178,6 +161,7 @@ export function App() {
     updateResult,
     setSavedState,
   });
+  const votesScreenModel = useVotesScreenModel({ month, settings, members, votes, updateSettingsAndVotes, resetVotes, replaceVoteSchedule });
 
   function goToStep(next: AppStep) {
     setStep(next);
@@ -201,8 +185,8 @@ export function App() {
         <CssBaseline />
         <Box sx={{ minHeight: "100vh", bgcolor: "background.default", pb: 9 }}>
         <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
-          <Toolbar sx={{ position: "relative", gap: 1.5, justifyContent: "space-between" }}>
-            <Box sx={{ width: 88, flexShrink: 0 }}>
+          <Toolbar sx={{ display: "grid", gridTemplateColumns: "96px minmax(0, 1fr) 96px", gap: 1 }}>
+            <Box>
               {step !== "home" && (
                 <IconButton edge="start" color="primary" aria-label="홈으로 돌아가기" onClick={() => setStep("home")}>
                   <ArrowBackIcon />
@@ -211,14 +195,8 @@ export function App() {
             </Box>
             <Box
               sx={{
-                position: "absolute",
-                left: 104,
-                right: 104,
-                top: "50%",
                 minWidth: 0,
                 textAlign: "center",
-                transform: "translateY(-50%)",
-                pointerEvents: "none",
               }}
             >
               <Typography
@@ -233,7 +211,7 @@ export function App() {
                 {monthTitle(month)}
               </Typography>
             </Box>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", ml: "auto" }}>
+            <Stack direction="row" spacing={0.25} sx={{ alignItems: "center", justifyContent: "flex-end" }}>
               <ScreenDescriptionButton description={STEP_DESCRIPTIONS[step]} />
               <IconButton edge="end" color="primary" aria-label="화면 메뉴 열기" onClick={(event) => setMenuAnchor(event.currentTarget)}>
                 <MenuIcon />
@@ -290,29 +268,7 @@ export function App() {
           )}
 
           {step === "votes" && (
-            <VotesScreen
-              settings={settings}
-              members={members}
-              votes={votes}
-              voteImageName={voteImageName}
-              voteImagePreviewUrl={voteImagePreviewUrl}
-              voteImageDialogOpen={voteImageDialogOpen}
-              voteImageZoom={voteImageZoom}
-              voteConversionProgress={voteConversionProgress}
-              voteConversionError={voteConversionError}
-              isVoteConverting={isVoteConverting}
-              voteCsvName={voteCsvName}
-              voteCsvError={voteCsvError}
-              isVoteCsvImporting={isVoteCsvImporting}
-              selectVoteCsv={selectVoteCsv}
-              clearVoteCsv={clearVoteCsv}
-              selectVoteImage={selectVoteImage}
-              clearVoteImage={clearVoteImage}
-              setVoteImageDialogOpen={setVoteImageDialogOpen}
-              setVoteImageZoom={setVoteImageZoom}
-              resetVotes={resetVotes}
-              replaceVoteSchedule={replaceVoteSchedule}
-            />
+            <VotesScreen model={votesScreenModel} />
           )}
 
           {step === "generate" && (
@@ -331,6 +287,7 @@ export function App() {
               downloadImage={downloadImage}
               updateServiceResult={updateServiceResult}
               updateCarResult={updateCarResult}
+              goToStep={setStep}
             />
           )}
 
@@ -340,6 +297,7 @@ export function App() {
               membersFile={membersFile}
               visibleMembers={visibleMembers}
               memberError={memberError}
+              memberSuccess={memberSuccess}
               importMembers={importMembers}
               clearMembers={clearMembers}
               addMember={addMember}
@@ -355,8 +313,9 @@ export function App() {
                 variant="contained"
                 endIcon={<ChevronRightIcon />}
                 onClick={() => setStep(step === "settings" ? "votes" : "generate")}
+                sx={{ width: { xs: "100%", sm: "auto" } }}
               >
-                다음
+                {step === "settings" ? "투표결과로" : "일정표 생성으로"}
               </Button>
             </Stack>
           )}
@@ -387,6 +346,7 @@ export function App() {
                     component="button"
                     type="button"
                     onClick={() => setStep(item.id)}
+                    aria-current={selected ? "page" : undefined}
                     sx={{
                       display: "flex",
                       flex: 1,
@@ -397,11 +357,12 @@ export function App() {
                       gap: 0.35,
                       border: 0,
                       borderRadius: 1,
-                      bgcolor: selected ? "#eaf3fb" : "transparent",
+                      bgcolor: selected ? "action.selected" : "transparent",
                       color,
                       cursor: "pointer",
                       px: 0.25,
                       py: 0.5,
+                      minHeight: 48,
                     }}
                   >
                     <Box
@@ -417,26 +378,11 @@ export function App() {
                       {STEP_ICONS[item.id]}
                     </Box>
                     <Stack direction="row" spacing={0.4} sx={{ maxWidth: "100%", alignItems: "center", justifyContent: "center" }}>
-                      <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 900 }}>
-                        {item.number}
-                      </Typography>
                       <Typography noWrap variant="caption" sx={{ minWidth: 0, fontWeight: selected ? 900 : 700 }}>
                         {item.label}
                       </Typography>
                     </Stack>
                   </Box>
-                  {index < WORKFLOW_STEPS.length - 1 && (
-                    <ChevronRightIcon
-                      aria-hidden="true"
-                      sx={{
-                        flexShrink: 0,
-                        alignSelf: "center",
-                        color: index < currentWorkflowIndex ? "primary.main" : "divider",
-                        fontSize: 18,
-                        mx: 0.1,
-                      }}
-                    />
-                  )}
                 </Box>
               );
             })}

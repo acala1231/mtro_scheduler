@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadStoredMembers, parseMembersCsvFile } from "./memberRepository";
+import { loadStoredMembers, parseMembersCsvFile, removeStoredMembers } from "./memberRepository";
 
 describe("parseMembersCsvFile", () => {
   beforeEach(() => {
@@ -39,5 +39,35 @@ describe("parseMembersCsvFile", () => {
     }));
     expect(loadStoredMembers()).toBeNull();
     expect(localStorage.removeItem).toHaveBeenCalledWith("schedule.membersFile");
+  });
+
+  it.each([
+    { name: "홍길동", roles: { 정: "false" }, counts: {} },
+    { name: "홍길동", roles: {}, counts: { 전체: "1" } },
+    { name: ["홍길동"], roles: {}, counts: {} },
+    { name: "홍길동", roles: [], counts: {} },
+    { id: 1, name: "홍길동", roles: {}, counts: {} },
+    { name: " ", roles: {}, counts: {} },
+    { name: "홍길동", roles: {}, counts: { 전체: -1 } },
+    { name: "홍길동", roles: {}, counts: { 전체: 1.5 } },
+  ])("잘못된 저장 필드 타입은 강제 변환하지 않고 안전하게 폴백한다", (member) => {
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ version: "browser-v2", members: [member] }));
+    expect(loadStoredMembers()).toBeNull();
+    expect(localStorage.removeItem).toHaveBeenCalledWith("schedule.membersFile");
+  });
+
+  it("중복된 저장 식별자나 이름은 안전하게 폴백한다", () => {
+    const member = { id: "same", name: "홍길동", roles: {}, counts: {} };
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ version: "browser-v2", members: [member, { ...member, name: "김철수" }] }));
+    expect(loadStoredMembers()).toBeNull();
+
+    vi.mocked(localStorage.getItem).mockReturnValue(JSON.stringify({ version: "browser-v2", members: [member, { ...member, id: "other" }] }));
+    expect(loadStoredMembers()).toBeNull();
+  });
+
+  it("명단 삭제의 저장소 성공 여부를 반환한다", () => {
+    expect(removeStoredMembers()).toBe(true);
+    vi.mocked(localStorage.removeItem).mockImplementation(() => { throw new Error("blocked"); });
+    expect(removeStoredMembers()).toBe(false);
   });
 });

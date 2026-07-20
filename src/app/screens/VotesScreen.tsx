@@ -6,20 +6,23 @@ import TableViewIcon from "@mui/icons-material/TableView";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Chip, Dialog, Divider, IconButton, LinearProgress, Stack, Tab, Tabs, Typography } from "@mui/material";
-import type { CarSchedule, Member, ServiceSchedule, ScheduleSettings, VoteData } from "../../domain/scheduleTypes";
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, Divider, IconButton, Stack, Tab, Tabs, Typography } from "@mui/material";
 import { Screen } from "../components/Screen";
 import { VoteScheduleSections } from "../components/VoteScheduleSections";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useEffect, useRef, useState } from "react";
 import { SAMPLE_VOTE_CSV } from "../../data/voteCsvRepository";
 import { downloadTextFile } from "../../export/downloadTextFile";
+import { HistoryAwareDialog } from "../components/HistoryAwareDialog";
+import type { VotesScreenModel } from "../hooks/useVotesScreenModel";
+import { VoteImportPanel } from "../components/VoteImportPanel";
 
 function downloadSampleVoteCsv() {
   downloadTextFile(SAMPLE_VOTE_CSV, "vote-results.sample.csv", "text/csv;charset=utf-8");
 }
 
-export function VotesScreen({
+export function VotesScreen({ model }: { model: VotesScreenModel }) {
+  const {
   settings,
   members,
   votes,
@@ -29,9 +32,11 @@ export function VotesScreen({
   voteImageZoom,
   voteConversionProgress,
   voteConversionError,
+  voteConversionSuccess,
   isVoteConverting,
   voteCsvName,
   voteCsvError,
+  voteCsvSuccess,
   isVoteCsvImporting,
   selectVoteCsv,
   clearVoteCsv,
@@ -41,29 +46,7 @@ export function VotesScreen({
   setVoteImageZoom,
   resetVotes,
   replaceVoteSchedule,
-}: {
-  settings: ScheduleSettings;
-  members: Member[];
-  votes: VoteData;
-  voteImageName: string;
-  voteImagePreviewUrl: string;
-  voteImageDialogOpen: boolean;
-  voteImageZoom: number;
-  voteConversionProgress: number;
-  voteConversionError: string;
-  isVoteConverting: boolean;
-  voteCsvName: string;
-  voteCsvError: string;
-  isVoteCsvImporting: boolean;
-  selectVoteCsv: (file: File | undefined) => void;
-  clearVoteCsv: () => void;
-  selectVoteImage: (file: File | undefined) => void;
-  clearVoteImage: () => void;
-  setVoteImageDialogOpen: (open: boolean) => void;
-  setVoteImageZoom: (value: number | ((zoom: number) => number)) => void;
-  resetVotes: (kind: "service" | "car") => void;
-  replaceVoteSchedule: (kind: "service" | "car", schedule: ServiceSchedule | CarSchedule, names: string[]) => void;
-}) {
+  } = model;
   const { confirm, confirmDialog } = useConfirmDialog();
   const [importTab, setImportTab] = useState<"image" | "csv">("image");
   const isImporting = isVoteConverting || isVoteCsvImporting;
@@ -107,7 +90,7 @@ export function VotesScreen({
               value="image"
               icon={<ImageIcon />}
               iconPosition="start"
-              label="이미지 업로드"
+              label="이미지에서 가져오기"
               disabled={isImporting}
             />
             <Tab
@@ -116,7 +99,7 @@ export function VotesScreen({
               value="csv"
               icon={<TableViewIcon />}
               iconPosition="start"
-              label="CSV 업로드"
+              label="CSV에서 가져오기"
               disabled={isImporting}
             />
           </Tabs>
@@ -128,8 +111,13 @@ export function VotesScreen({
             hidden={importTab !== "image"}
             sx={{ pt: 2 }}
           >
-            <Stack spacing={2}>
-                <Typography variant="body2" color="text.secondary">카카오톡 투표 화면을 캡처한 이미지를 선택하면 바로 분석합니다.</Typography>
+            <VoteImportPanel
+              description="카카오톡 투표 화면을 캡처한 이미지를 선택하면 바로 분석합니다."
+              processingLabel={isVoteConverting ? `이미지 분석 중 ${voteConversionProgress}%` : undefined}
+              progress={voteConversionProgress}
+              success={voteConversionSuccess}
+              error={voteConversionError}
+            >
                 <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1, alignItems: "center" }}>
                   <Button variant="contained" component="label" startIcon={<ImageIcon />} disabled={isImporting} sx={{ width: { xs: "100%", sm: "auto" } }}>
                     투표결과 이미지 선택
@@ -158,7 +146,7 @@ export function VotesScreen({
                     <Box component="img" src={voteImagePreviewUrl} alt="업로드한 투표결과 미리보기" sx={{ display: "block", width: "100%", height: 120, objectFit: "contain" }} />
                   </Box>
                 )}
-                <Dialog fullScreen open={voteImageDialogOpen} onClose={() => setVoteImageDialogOpen(false)}>
+                <HistoryAwareDialog fullScreen open={voteImageDialogOpen} onClose={() => setVoteImageDialogOpen(false)}>
                   <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, p: 1 }}>
                     <Stack direction="row" spacing={0.75} sx={{ alignItems: "center" }}>
                       <IconButton aria-label="이미지 축소" onClick={() => setVoteImageZoom((zoom) => Math.max(0.5, Number((zoom - 0.25).toFixed(2))))}><ZoomOutIcon /></IconButton>
@@ -170,15 +158,8 @@ export function VotesScreen({
                   <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", p: 2 }}>
                     <Box component="img" src={voteImagePreviewUrl} alt="업로드한 투표결과 확대보기" sx={{ display: "block", width: `${voteImageZoom * 100}%`, minWidth: voteImageZoom > 1 ? `${voteImageZoom * 100}%` : "auto", maxWidth: "none", maxHeight: "none", objectFit: "contain" }} />
                   </Box>
-                </Dialog>
-                {isVoteConverting && (
-                  <Stack spacing={0.75}>
-                    <Typography variant="body2" color="text.secondary">이미지 분석 중 {voteConversionProgress}%</Typography>
-                    <LinearProgress aria-label="이미지 분석 진행률" variant="determinate" value={voteConversionProgress} />
-                  </Stack>
-                )}
-                {voteConversionError && <Alert severity="error">{voteConversionError}</Alert>}
-            </Stack>
+                </HistoryAwareDialog>
+            </VoteImportPanel>
           </Box>
           <Box
             role="tabpanel"
@@ -187,8 +168,12 @@ export function VotesScreen({
             hidden={importTab !== "csv"}
             sx={{ pt: 2 }}
           >
-            <Stack spacing={2}>
-                <Typography variant="body2" color="text.secondary">구분, 날짜, 시간, 이름 순서의 CSV 파일을 선택하면 바로 투표결과를 가져옵니다.</Typography>
+            <VoteImportPanel
+              description="구분, 날짜, 시간, 이름 순서의 CSV 파일을 선택하면 바로 투표결과를 가져옵니다."
+              processingLabel={isVoteCsvImporting ? "CSV 가져오는 중" : undefined}
+              success={voteCsvSuccess}
+              error={voteCsvError}
+            >
                 <Box><Typography variant="caption" color="text.secondary">구분에는 복사일정 또는 차량봉사를 입력해 주세요.</Typography></Box>
                 <Stack direction="row" sx={{ flexWrap: "wrap", gap: 1, alignItems: "center" }}>
                   <Button variant="outlined" startIcon={<DownloadIcon />} onClick={downloadSampleVoteCsv} sx={{ width: { xs: "100%", sm: "auto" } }}>샘플 양식 다운로드</Button>
@@ -206,14 +191,7 @@ export function VotesScreen({
                   </Button>
                   {voteCsvName && <Chip label={voteCsvName} variant="outlined" onDelete={isImporting ? undefined : clearVoteCsv} />}
                 </Stack>
-                {isVoteCsvImporting && (
-                  <Stack spacing={0.75}>
-                    <Typography variant="body2" color="text.secondary">CSV 가져오는 중</Typography>
-                    <LinearProgress aria-label="CSV 가져오기 진행률" />
-                  </Stack>
-                )}
-                {voteCsvError && <Alert severity="error">{voteCsvError}</Alert>}
-            </Stack>
+            </VoteImportPanel>
           </Box>
         </AccordionDetails>
       </Accordion>

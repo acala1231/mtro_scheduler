@@ -5,7 +5,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import { Alert, Box, Button, Dialog, IconButton, Paper, Stack, Typography } from "@mui/material";
 import dayjs from "dayjs";
-import type { CarResultRow, GenerateScheduleResult, Member, Role, ScheduleResultRow, ScheduleSettings, ValidationIssue } from "../../domain/scheduleTypes";
+import type { AppStep, CarResultRow, GenerateScheduleResult, Member, Role, ScheduleResultRow, ScheduleSettings, ValidationIssue } from "../../domain/scheduleTypes";
 import { isMissingAssignment } from "../assignmentDisplay";
 import { SchedulePreview } from "../components/SchedulePreview";
 import { ScheduleResultEditor } from "../components/ScheduleResultEditor";
@@ -38,6 +38,7 @@ export function GenerateScreen({
   downloadImage,
   updateServiceResult,
   updateCarResult,
+  goToStep,
 }: {
   month: string;
   settings: ScheduleSettings;
@@ -53,6 +54,7 @@ export function GenerateScreen({
   downloadImage: () => void;
   updateServiceResult: (rowIndex: number, row: ScheduleResultRow) => void;
   updateCarResult: (rowIndex: number, row: CarResultRow) => void;
+  goToStep: (step: AppStep) => void;
 }) {
   const { confirm, confirmDialog } = useConfirmDialog();
 
@@ -146,7 +148,12 @@ export function GenerateScreen({
       ) : (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Stack spacing={1.5} sx={{ alignItems: "flex-start" }}>
-            <Typography>아직 생성된 일정표가 없습니다.</Typography>
+            <Typography sx={{ fontWeight: 800 }}>아직 생성된 일정표가 없습니다.</Typography>
+            <Typography variant="body2" color="text.secondary">일정과 투표결과를 확인한 뒤 일정표를 생성해 주세요.</Typography>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ width: { xs: "100%", sm: "auto" } }}>
+              <Button variant="outlined" onClick={() => goToStep("settings")}>일정편집으로</Button>
+              <Button variant="outlined" onClick={() => goToStep("votes")}>투표결과로</Button>
+            </Stack>
           </Stack>
         </Paper>
       )}

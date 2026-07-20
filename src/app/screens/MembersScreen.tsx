@@ -39,6 +39,7 @@ export function MembersScreen({
   membersFile,
   visibleMembers,
   memberError,
+  memberSuccess,
   importMembers,
   clearMembers,
   addMember,
@@ -50,6 +51,7 @@ export function MembersScreen({
   membersFile: MembersFile | null;
   visibleMembers: Array<{ key: string; member: Member; index: number }>;
   memberError: string;
+  memberSuccess: string;
   importMembers: (file: File | undefined) => void;
   clearMembers: () => void;
   addMember: (patch: MemberDraft) => boolean;
@@ -93,16 +95,17 @@ export function MembersScreen({
 
   function deleteAllMembers() {
     confirm({
-      title: "명단을 전체 삭제할까요?",
-      message: "브라우저에 저장된 명단을 모두 삭제합니다. 필요한 경우 먼저 명단을 다운로드해 주세요.",
+      title: "저장된 명단만 전체 삭제할까요?",
+      message: "브라우저에 저장된 명단만 삭제합니다. 월별 일정과 투표결과는 유지됩니다. 필요한 경우 먼저 명단을 다운로드해 주세요.",
       confirmText: "전체 삭제",
-      confirmColor: "warning",
+      confirmColor: "error",
       onConfirm: clearMembers,
     });
   }
 
   return (
     <Screen>
+      <Alert severity="info">명단은 현재 브라우저에만 저장됩니다. 기기 변경이나 브라우저 데이터 삭제에 대비해 명단을 주기적으로 다운로드해 백업해 주세요.</Alert>
       <Card variant="outlined">
         <CardContent>
           <Stack spacing={1.5}>
@@ -140,7 +143,7 @@ export function MembersScreen({
                     items={[
                       { label: "명단 다운로드", icon: <DownloadIcon fontSize="small" />, onClick: downloadMembersFile },
                       { label: "파일로 명단 등록", icon: <UploadFileIcon fontSize="small" />, onClick: handleImportButtonClick },
-                      { label: "전체 삭제", color: "warning", icon: <DeleteForeverIcon fontSize="small" />, onClick: deleteAllMembers },
+                      { label: "전체 삭제", color: "error", icon: <DeleteForeverIcon fontSize="small" />, onClick: deleteAllMembers },
                     ]}
                   />
                 )}
@@ -157,6 +160,7 @@ export function MembersScreen({
               </Stack>
             </Stack>
             {memberError && <Alert severity={membersFile ? "error" : "warning"}>{memberError}</Alert>}
+            {memberSuccess && <Alert severity="success">{memberSuccess}</Alert>}
           </Stack>
         </CardContent>
       </Card>
@@ -180,7 +184,10 @@ export function MembersScreen({
       {(membersFile || isAddingMember) && (
         <>
           {membersFile && (
-            <TextField label="이름 검색" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="예: 홍길동" fullWidth />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
+              <TextField label="이름·세례명·축일·별칭 검색" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="예: 홍길동, 베드로, 06/29" fullWidth />
+              <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>{visibleMembers.length}명 · 축일순</Typography>
+            </Stack>
           )}
           <Grid container spacing={1.5}>
             {isAddingMember && (

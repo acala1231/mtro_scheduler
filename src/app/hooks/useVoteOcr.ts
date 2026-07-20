@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { PSM as PsmValue, Worker } from "tesseract.js";
 import { resolveMemberMatchesFromText } from "../../domain/memberMatcher";
 import type { Member, ScheduleSettings, VoteData, VoteEntry } from "../../domain/scheduleTypes";
 import { rebalanceAliasVotes, type OcrResolvedVoteEntry } from "../../domain/voteAliasRebalance";
 import { mergeVoteOcrAttempts, type VoteOcrAttempt } from "../../domain/voteOcrMerge";
 import { mergeScheduleOcrText } from "../../domain/ocrImageProcessing";
-import { addVoteSchedulesToSettings, removeOcrSchedules } from "../../domain/scheduleSettings";
+import { removeOcrSchedules } from "../../domain/scheduleSettings";
+import { applyVoteOcrImport } from "../../domain/voteOcrImport";
+import { importRevision } from "../../domain/importRevision";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse, type PreparedOcrVariant } from "../appUtils";
+import { importStatusReducer } from "./importStatus";
 
 function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): OcrResolvedVoteEntry[] {
   return entries.flatMap<OcrResolvedVoteEntry>((entry) => {
@@ -43,18 +46,24 @@ export function useVoteOcr({
     updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
   ) => void;
 }) {
-  const [voteImageName, setVoteImageName] = useState("");
+  const [status, dispatch] = useReducer(importStatusReducer, { state: "idle" });
   const [voteImagePreviewUrl, setVoteImagePreviewUrl] = useState("");
   const [voteImageDialogOpen, setVoteImageDialogOpen] = useState(false);
   const [voteImageZoom, setVoteImageZoom] = useState(1);
-  const [voteConversionError, setVoteConversionError] = useState("");
   const [voteConversionProgress, setVoteConversionProgress] = useState(0);
-  const [isVoteConverting, setIsVoteConverting] = useState(false);
   const requestIdRef = useRef(0);
+  const latestMonthRef = useRef(month);
+  const latestMembersRef = useRef(members);
+  latestMonthRef.current = month;
+  latestMembersRef.current = members;
 
   useEffect(() => {
     requestIdRef.current += 1;
-    setIsVoteConverting(false);
+    dispatch({ type: "reset" });
+    setVoteImagePreviewUrl("");
+    setVoteImageDialogOpen(false);
+    setVoteImageZoom(1);
+    setVoteConversionProgress(0);
   }, [month]);
 
   useEffect(() => {
@@ -93,7 +102,7 @@ export function useVoteOcr({
     };
   }
 
-  function applyVoteOcrAttempt(bestAttempt: VoteOcrAttempt) {
+  function applyVoteOcrAttempt(bestAttempt: VoteOcrAttempt, requestRevision: string, fileName: string) {
     const mismatchedMonths = bestAttempt.parsed.detectedMonths.filter((detectedMonth) => detectedMonth !== month);
     const hasMonthMismatch = mismatchedMonths.length > 0;
     const resolvedVotes = bestAttempt.resolvedVotes ?? {
@@ -103,23 +112,22 @@ export function useVoteOcr({
     const rebalanced = rebalanceAliasVotes({ ...resolvedVotes, voteCounts: bestAttempt.parsed.voteCounts });
     const serviceVotes = hasMonthMismatch ? [] : rebalanced.serviceVotes.map(({ entry }) => entry);
     const carVotes = hasMonthMismatch ? [] : rebalanced.carVotes.map(({ entry }) => entry);
-    setVoteConversionError(
-      hasMonthMismatch
-        ? `기준월과 투표결과 이미지의 월이 다릅니다. 기준월: ${monthTitle(month)}, 이미지: ${mismatchedMonths.map(monthTitle).join(", ")}`
-        : "",
-    );
-    updateSettingsAndVotes(({ settings: latestSettings, votes: latestVotes }) => ({
-      settings: hasMonthMismatch
-        ? latestSettings
-        : addVoteSchedulesToSettings(latestSettings, serviceVotes, carVotes, bestAttempt.parsed.voteCounts),
-      votes: {
-        ...latestVotes,
-        month,
-        rawText: bestAttempt.sanitizedRawText,
-        serviceVotes,
-        carVotes,
-      },
-    }));
+    if (hasMonthMismatch) {
+      dispatch({ type: "error", fileName, message: `기준월과 투표결과 이미지의 월이 다릅니다. 기준월: ${monthTitle(month)}, 이미지: ${mismatchedMonths.map(monthTitle).join(", ")}. 기존 투표결과는 유지됩니다.` });
+      return;
+    }
+    let stale = false;
+    updateSettingsAndVotes((current) => {
+      if (latestMonthRef.current !== month || importRevision(month, current.settings, latestMembersRef.current) !== requestRevision) { stale = true; return current; }
+      return applyVoteOcrImport(current, {
+        month, rawText: bestAttempt.sanitizedRawText, serviceVotes, carVotes, voteCounts: bestAttempt.parsed.voteCounts,
+      });
+    });
+    if (stale) {
+      dispatch({ type: "error", fileName, message: "처리 중 기준월, 일정 또는 명단이 변경되었습니다. 이미지를 다시 선택해 주세요. 기존 투표결과는 유지됩니다." });
+      return;
+    }
+    dispatch({ type: "success", fileName, message: `복사일정 ${serviceVotes.length}건, 차량봉사 ${carVotes.length}건을 가져왔습니다.` });
   }
 
   async function recognizeVoteImage(
@@ -155,17 +163,10 @@ export function useVoteOcr({
 
   async function convertVoteImage(file: File) {
     const requestId = ++requestIdRef.current;
-    setIsVoteConverting(true);
-    let requestSettings = removeOcrSchedules(settings, "all");
-    updateSettingsAndVotes(({ settings: latestSettings }) => {
-      requestSettings = removeOcrSchedules(latestSettings, "all");
-      return {
-        settings: requestSettings,
-        votes: { month, rawText: "", serviceVotes: [], carVotes: [] },
-      };
-    });
+    dispatch({ type: "start", fileName: file.name });
+    const requestSettings = removeOcrSchedules(settings, "all");
+    const requestRevision = importRevision(month, settings, members);
     setVoteConversionProgress(5);
-    setVoteConversionError("");
 
     try {
       if (file.size > 15 * 1024 * 1024) throw new Error("image-too-large");
@@ -197,7 +198,7 @@ export function useVoteOcr({
         }
         const bestAttempt = mergeVoteOcrAttempts(attempts, scoreVoteParse);
         if (requestId !== requestIdRef.current) return;
-        applyVoteOcrAttempt(bestAttempt);
+        applyVoteOcrAttempt(bestAttempt, requestRevision, file.name);
         if (requestId !== requestIdRef.current) return;
         setVoteConversionProgress(100);
       } finally {
@@ -206,41 +207,37 @@ export function useVoteOcr({
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       setVoteConversionProgress(0);
-      setVoteConversionError(error instanceof Error && error.message === "image-too-large" ? "이미지는 15MB 이하만 선택할 수 있습니다." : "투표결과 입력에 실패했습니다. 이미지를 다시 선택해 주세요.");
-    } finally {
-      if (requestId === requestIdRef.current) setIsVoteConverting(false);
+      dispatch({ type: "error", fileName: file.name, message: (error instanceof Error && error.message === "image-too-large" ? "이미지는 15MB 이하만 선택할 수 있습니다." : "투표결과 입력에 실패했습니다. 이미지를 다시 선택해 주세요.") + " 기존 투표결과는 유지됩니다." });
     }
   }
 
   function selectVoteImage(file: File | undefined) {
-    setVoteImageName(file?.name ?? "");
+    if (!file) dispatch({ type: "reset" });
     setVoteImagePreviewUrl(file ? URL.createObjectURL(file) : "");
     setVoteImageDialogOpen(false);
     setVoteImageZoom(1);
-    setVoteConversionError("");
     setVoteConversionProgress(0);
     if (file) void convertVoteImage(file);
   }
 
   function clearVoteImage() {
     requestIdRef.current += 1;
-    setVoteImageName("");
+    dispatch({ type: "reset" });
     setVoteImagePreviewUrl("");
     setVoteImageDialogOpen(false);
     setVoteImageZoom(1);
-    setVoteConversionError("");
     setVoteConversionProgress(0);
-    setIsVoteConverting(false);
   }
 
   return {
-    voteImageName,
+    voteImageName: status.state === "idle" ? "" : status.fileName,
     voteImagePreviewUrl,
     voteImageDialogOpen,
     voteImageZoom,
-    voteConversionError,
+    voteConversionError: status.state === "error" ? status.message : "",
+    voteConversionSuccess: status.state === "success" ? status.message : "",
     voteConversionProgress,
-    isVoteConverting,
+    isVoteConverting: status.state === "processing",
     selectVoteImage,
     clearVoteImage,
     setVoteImageDialogOpen,

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { loadStoredMembers, parseMembersCsvFile, removeStoredMembers, saveStoredMembers } from "../../data/memberRepository";
-import { BASE_ROLES, COUNT_ROLES, type GenerateScheduleResult, type Member, type MembersFile } from "../../domain/scheduleTypes";
-import { compareMembersByFeastDay, normalizeFeastDay } from "../../domain/feastDay";
+import { type GenerateScheduleResult, type Member, type MembersFile } from "../../domain/scheduleTypes";
+import { compareMembersByFeastDay } from "../../domain/feastDay";
+import { createMember, updateMember as normalizeMemberUpdate } from "../../domain/memberEditing";
 
 export type VisibleMember = {
   key: string;
@@ -15,39 +16,6 @@ function memberKey(member: Member, index: number) {
   return member.id ?? `${index}:${member.name}:${member.baptismalName ?? ""}`;
 }
 
-function duplicateMemberKey(member: Pick<Member, "name" | "baptismalName">) {
-  return member.name.trim();
-}
-
-function emptyMemberCounts(): Member["counts"] {
-  return Object.fromEntries(COUNT_ROLES.map((role) => [role, 0])) as Member["counts"];
-}
-
-function completeMember(patch: Partial<Member>): Member {
-  return {
-    id: crypto.randomUUID(),
-    name: String(patch.name ?? "").trim(),
-    baptismalName: String(patch.baptismalName ?? "").trim(),
-    feastDay: normalizeFeastDay(patch.feastDay),
-    alias: String(patch.alias ?? "").trim(),
-    roles: Object.fromEntries(BASE_ROLES.map((role) => [role, Boolean(patch.roles?.[role])])) as Member["roles"],
-    counts: patch.counts ?? emptyMemberCounts(),
-  };
-}
-
-function mergeMember(currentMember: Member, patch: Partial<Member>): Member {
-  return {
-    ...currentMember,
-    ...patch,
-    name: patch.name === undefined ? currentMember.name : String(patch.name).trim(),
-    baptismalName: patch.baptismalName === undefined ? currentMember.baptismalName : String(patch.baptismalName).trim(),
-    feastDay: patch.feastDay === undefined ? currentMember.feastDay : normalizeFeastDay(patch.feastDay),
-    alias: patch.alias === undefined ? currentMember.alias : String(patch.alias).trim(),
-    roles: patch.roles ? { ...currentMember.roles, ...patch.roles } : currentMember.roles,
-    counts: patch.counts ? { ...currentMember.counts, ...patch.counts } : currentMember.counts,
-  };
-}
-
 export function useMembers({
   result,
   onMembersChanged,
@@ -58,6 +26,7 @@ export function useMembers({
   const [sourceMembersFile, setSourceMembersFile] = useState<MembersFile | null>(null);
   const [membersFile, setMembersFile] = useState<MembersFile | null>(null);
   const [memberError, setMemberError] = useState("");
+  const [memberSuccess, setMemberSuccess] = useState("");
 
   useEffect(() => {
     const storedMembers = loadStoredMembers();
@@ -82,6 +51,8 @@ export function useMembers({
 
   async function importMembers(file: File | undefined) {
     if (!file) return;
+    setMemberError("");
+    setMemberSuccess("");
 
     try {
       const nextMembersFile = await parseMembersCsvFile(file);
@@ -89,17 +60,24 @@ export function useMembers({
       setSourceMembersFile(nextMembersFile);
       setMembersFile(nextMembersFile);
       setMemberError("");
+      setMemberSuccess(`명단 ${nextMembersFile.members.length}명을 등록했습니다.`);
       onMembersChanged();
     } catch (error) {
-      setMemberError(error instanceof Error ? error.message : "명단 파일을 읽지 못했습니다.");
+      setMemberSuccess("");
+      setMemberError(`${error instanceof Error ? error.message : "명단 파일을 읽지 못했습니다."} 기존 명단은 유지됩니다.`);
     }
   }
 
   function clearMembers() {
-    removeStoredMembers();
+    if (!removeStoredMembers()) {
+      setMemberError("명단을 삭제하지 못했습니다. 브라우저 설정을 확인해 주세요.");
+      setMemberSuccess("");
+      return;
+    }
     setSourceMembersFile(null);
     setMembersFile(null);
     setMemberError("등록된 명단이 없습니다. 명단을 등록해 주세요.");
+    setMemberSuccess("");
     onMembersChanged();
   }
 
@@ -111,18 +89,9 @@ export function useMembers({
 
     let nextMember: Member;
     try {
-      nextMember = mergeMember(currentMember, patch);
-    } catch {
-      setMemberError("축일은 실제 날짜를 MM/dd 형식으로 입력해 주세요.");
-      return false;
-    }
-    const nextDuplicateKey = duplicateMemberKey(nextMember);
-    const duplicatedMember = sourceMembersFile.members.some(
-      (member, memberIndex) => memberIndex !== index && duplicateMemberKey(member) === nextDuplicateKey,
-    );
-
-    if (duplicatedMember) {
-      setMemberError(`중복된 명단입니다: ${nextMember.name.trim()} ${nextMember.baptismalName?.trim() ?? ""}`.trim());
+      nextMember = normalizeMemberUpdate(currentMember, patch, sourceMembersFile.members);
+    } catch (error) {
+      setMemberError(error instanceof Error ? error.message : "명단을 수정하지 못했습니다.");
       return false;
     }
 
@@ -138,6 +107,7 @@ export function useMembers({
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
     setMemberError("");
+    setMemberSuccess("");
     onMembersChanged();
     return true;
   }
@@ -145,24 +115,12 @@ export function useMembers({
   function addMember(patch: Partial<Member>): boolean {
     let nextMember: Member;
     try {
-      nextMember = completeMember(patch);
-    } catch {
-      setMemberError("축일은 실제 날짜를 MM/dd 형식으로 입력해 주세요.");
+      nextMember = createMember(patch, sourceMembersFile?.members ?? []);
+    } catch (error) {
+      setMemberError(error instanceof Error ? error.message : "명단을 추가하지 못했습니다.");
       return false;
     }
-
-    if (!nextMember.name) {
-      setMemberError("이름을 입력해 주세요.");
-      return false;
-    }
-
     const currentMembers = sourceMembersFile?.members ?? [];
-    const duplicatedMember = currentMembers.some((member) => duplicateMemberKey(member) === duplicateMemberKey(nextMember));
-
-    if (duplicatedMember) {
-      setMemberError(`중복된 명단입니다: ${nextMember.name} ${nextMember.baptismalName ?? ""}`.trim());
-      return false;
-    }
 
     const nextMembersFile: MembersFile = {
       version: sourceMembersFile?.version ?? "browser-manual",
@@ -177,6 +135,7 @@ export function useMembers({
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
     setMemberError("");
+    setMemberSuccess("");
     onMembersChanged();
     return true;
   }
@@ -201,6 +160,8 @@ export function useMembers({
     }
     setSourceMembersFile(nextMembersFile);
     setMembersFile(nextMembersFile);
+    setMemberError("");
+    setMemberSuccess("");
     onMembersChanged();
   }
 
@@ -217,6 +178,7 @@ export function useMembers({
     members: membersFile?.members ?? [],
     membersFile,
     memberError,
+    memberSuccess,
     importMembers,
     clearMembers,
     addMember,

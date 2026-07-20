@@ -59,7 +59,9 @@ export function useScheduleSnapshot() {
   function updateSettingsAndVotes(
     updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
   ) {
-    const next = updater({ settings: settingsRef.current, votes: votesRef.current });
+    const current = { settings: settingsRef.current, votes: votesRef.current };
+    const next = updater(current);
+    if (next.settings === current.settings && next.votes === current.votes) return;
     const sortedSettings = sortSettingsSchedules({
       ...next.settings,
       serviceSchedules: dedupeSchedulesByKey(next.settings.serviceSchedules),

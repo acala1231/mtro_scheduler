@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Box, Button, Card, CardContent, Chip, Divider, Grid, Stack, TextField, Typography } from "@mui/material";
 import { BASE_ROLES, type BaseRole, type CountRole, type Member } from "../../domain/scheduleTypes";
+import { normalizeFeastDay } from "../../domain/feastDay";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { ActionMenu } from "./ActionMenu";
 
@@ -26,6 +27,23 @@ function totalAssignmentCount(member: Member) {
   return OPTIONAL_COUNT_ROLES.reduce((sum, role) => sum + member.counts[role], 0);
 }
 
+function MemberField({ label, value, numeric = false }: { label: string; value?: string; numeric?: boolean }) {
+  if (!value) return null;
+  return <Stack direction="row" spacing={0.5} sx={{ alignItems: "baseline" }}>
+    <Typography variant="caption" sx={{ color: "grey.600", fontWeight: 600 }}>{label}</Typography>
+    <Typography variant="body2" color="text.primary" sx={{ fontWeight: 600, fontVariantNumeric: numeric ? "tabular-nums" : undefined }}>{value}</Typography>
+  </Stack>;
+}
+
+function MemberSummary({ member }: { member: Member }) {
+  return <Stack direction="row" spacing={0.75} sx={{ alignItems: "baseline", flexWrap: "wrap" }}>
+    <Typography variant="h6">{member.name}</Typography>
+    <MemberField label="세례명" value={member.baptismalName} />
+    <MemberField label="축일" value={member.feastDay} numeric />
+    <MemberField label="별칭" value={member.alias} />
+  </Stack>;
+}
+
 export function MemberCard({
   member,
   startInEditMode = false,
@@ -43,6 +61,12 @@ export function MemberCard({
   const [draft, setDraft] = useState<MemberDraft>(() => createMemberDraft(member));
   const currentRoles = isEditing ? draft.roles : member.roles;
   const { confirm, confirmDialog } = useConfirmDialog();
+  const nameError = isEditing && !draft.name.trim();
+  const assignmentCount = totalAssignmentCount(member);
+  let feastDayError = false;
+  if (isEditing && draft.feastDay?.trim()) {
+    try { normalizeFeastDay(draft.feastDay); } catch { feastDayError = true; }
+  }
 
   function startEditing() {
     setDraft(createMemberDraft(member));
@@ -60,6 +84,7 @@ export function MemberCard({
   }
 
   function saveEditing() {
+    if (nameError || feastDayError) return;
     if (onSave(draft)) {
       setIsEditing(false);
     }
@@ -92,7 +117,7 @@ export function MemberCard({
               {isEditing ? (
                 <Grid container spacing={1}>
                   <Grid size={{ xs: 12, md: 3 }}>
-                    <TextField label="이름" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} fullWidth size="small" />
+                    <TextField label="이름" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} error={nameError} helperText={nameError ? "이름을 입력해 주세요." : " "} fullWidth size="small" />
                   </Grid>
                   <Grid size={{ xs: 12, md: 3 }}>
                     <TextField
@@ -107,10 +132,13 @@ export function MemberCard({
                     <TextField
                       label="축일"
                       placeholder="MM/dd"
+                      inputMode="numeric"
                       value={draft.feastDay ?? ""}
                       onChange={(event) => updateDraft({ feastDay: event.target.value })}
                       fullWidth
                       size="small"
+                      error={feastDayError}
+                      helperText={feastDayError ? "실제 날짜를 MM/dd 형식으로 입력해 주세요." : "예: 09/29"}
                     />
                   </Grid>
                   <Grid size={{ xs: 12, md: 3 }}>
@@ -123,26 +151,7 @@ export function MemberCard({
                     />
                   </Grid>
                 </Grid>
-              ) : (
-                <Stack direction="row" spacing={1} sx={{ alignItems: "baseline", flexWrap: "wrap" }}>
-                  <Typography variant="h6">{member.name}</Typography>
-                  {member.baptismalName && (
-                    <Typography variant="body2" color="text.secondary">
-                      {member.baptismalName}
-                    </Typography>
-                  )}
-                  {member.feastDay && (
-                    <Typography variant="body2" color="text.secondary">
-                      {member.feastDay}
-                    </Typography>
-                  )}
-                  {member.alias && (
-                    <Typography variant="body2" color="text.secondary">
-                      {member.alias}
-                    </Typography>
-                  )}
-                </Stack>
-              )}
+              ) : <MemberSummary member={member} />}
             </Stack>
             {!isEditing && (
               <Stack sx={{ flexShrink: 0, mt: -0.5 }}>
@@ -169,26 +178,24 @@ export function MemberCard({
               />
             ))}
           </Stack>
-          <Box sx={{ py: 1.25 }}>
-            <Divider />
-          </Box>
+          {assignmentCount > 0 && <><Box sx={{ py: 1.25 }}><Divider /></Box>
           <Stack spacing={0.75}>
             <Typography variant="caption" color="text.secondary">
-              이번 달 배정 횟수 총 {totalAssignmentCount(member)}회
+              이번 달 배정 횟수 총 {assignmentCount}회
             </Typography>
             <Stack direction="row" sx={{ flexWrap: "wrap", gap: 0.75 }}>
               {OPTIONAL_COUNT_ROLES.filter((role) => member.counts[role] > 0).map((role) => (
                 <Chip key={role} label={countLabel(role, member.counts[role])} size="small" variant="outlined" />
               ))}
             </Stack>
-          </Stack>
+          </Stack></>}
           <Stack direction="row" sx={{ justifyContent: "flex-end", gap: 1 }}>
             {isEditing ? (
               <>
                 <Button variant="outlined" size="small" onClick={cancelEditing}>
                   취소
                 </Button>
-                <Button variant="contained" size="small" onClick={saveEditing}>
+                <Button variant="contained" size="small" onClick={saveEditing} disabled={nameError || feastDayError}>
                   저장
                 </Button>
               </>

@@ -1,45 +1,22 @@
 import { useEffect, useState } from "react";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import { Box, ClickAwayListener, IconButton, Tooltip } from "@mui/material";
+import { Button, DialogActions, DialogContent, DialogTitle, IconButton, Typography } from "@mui/material";
+import { HistoryAwareDialog } from "./HistoryAwareDialog";
 
 export function ScreenDescriptionButton({ description }: { description: string }) {
-  const [tooltipOpen, setTooltipOpen] = useState(false);
-
+  const [open, setOpen] = useState(false);
   useEffect(() => {
-    setTooltipOpen(false);
+    setOpen(false);
   }, [description]);
 
   return (
-    <ClickAwayListener onClickAway={() => setTooltipOpen(false)}>
-      <Box>
-        <Tooltip
-          title={description}
-          describeChild
-          arrow
-          open={tooltipOpen}
-          onOpen={() => setTooltipOpen(true)}
-          onClose={() => setTooltipOpen(false)}
-          disableTouchListener
-          placement="bottom-end"
-          slotProps={{
-            tooltip: {
-              sx: {
-                maxWidth: 280,
-                whiteSpace: "pre-line",
-                lineHeight: 1.55,
-              },
-            },
-          }}
-        >
-          <IconButton
-            color="primary"
-            aria-label="현재 화면 설명"
-            onClick={() => setTooltipOpen((open) => !open)}
-          >
-            <InfoOutlinedIcon />
-          </IconButton>
-        </Tooltip>
-      </Box>
-    </ClickAwayListener>
+    <>
+      <IconButton color="primary" aria-label="현재 화면 설명 열기" onClick={() => setOpen(true)}><InfoOutlinedIcon /></IconButton>
+      <HistoryAwareDialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="xs" aria-labelledby="screen-description-title">
+        <DialogTitle id="screen-description-title">화면 사용 안내</DialogTitle>
+        <DialogContent><Typography sx={{ whiteSpace: "pre-line", lineHeight: 1.7 }}>{description}</Typography></DialogContent>
+        <DialogActions><Button onClick={() => setOpen(false)}>확인</Button></DialogActions>
+      </HistoryAwareDialog>
+    </>
   );
 }
