@@ -77,6 +77,29 @@ describe("createDefaultSettings", () => {
     expect(next.votes.carVotes).toEqual(votes.carVotes);
   });
 
+  it("투표 초기화는 CSV에서 자동 추가된 해당 섹션 일정도 제거한다", () => {
+    const importedService = { ...createServiceSchedule("2026-07-12", "11:30"), source: "import" as const };
+    const importedCar = { ...createCarSchedule("2026-07-12", "10:00"), source: "import" as const };
+    const settings = {
+      ...createDefaultSettings("2026-07"),
+      serviceSchedules: [importedService],
+      carSchedules: [importedCar],
+    };
+    const votes = {
+      month: "2026-07",
+      rawText: "",
+      serviceVotes: [{ scheduleKey: importedService.key, name: "홍길동", source: "import" as const }],
+      carVotes: [{ scheduleKey: importedCar.key, name: "김철수", source: "import" as const }],
+    };
+
+    const next = resetOcrVoteSection(settings, votes, "service");
+
+    expect(next.settings.serviceSchedules).toEqual([]);
+    expect(next.settings.carSchedules).toEqual([importedCar]);
+    expect(next.votes.serviceVotes).toEqual([]);
+    expect(next.votes.carVotes).toEqual(votes.carVotes);
+  });
+
   it("차량 투표 초기화는 차량 OCR 일정만 제거하고 편집해 영구 전환된 일정은 유지한다", () => {
     const promoted = createCarSchedule("2026-07-12", "10:00");
     const ocrCar = { ...createCarSchedule("2026-07-19", "10:00"), source: "ocr" as const };

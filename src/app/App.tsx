@@ -28,15 +28,17 @@ import {
   type AppStep,
 } from "../domain/scheduleTypes";
 import { validateSettings, validateVotes, validateMembers } from "../domain/validators";
-import { STEP_ICONS, STEPS, theme } from "./appConstants";
+import { STEP_DESCRIPTIONS, STEP_ICONS, STEPS, theme } from "./appConstants";
 import { firstDateOfMonth, issueCounts, monthFromDayjs, monthTitle } from "./appUtils";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { PwaUpdatePrompt } from "./components/PwaUpdatePrompt";
+import { ScreenDescriptionButton } from "./components/ScreenDescriptionButton";
 import { useBackButtonClose } from "./hooks/useBackButtonClose";
 import { useMembers } from "./hooks/useMembers";
 import { useScheduleResult } from "./hooks/useScheduleResult";
 import { useScheduleSnapshot } from "./hooks/useScheduleSnapshot";
 import { useVoteOcr } from "./hooks/useVoteOcr";
+import { useVoteCsvImport } from "./hooks/useVoteCsvImport";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { HomeScreen } from "./screens/HomeScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -144,6 +146,7 @@ export function App() {
     setVoteImageDialogOpen,
     setVoteImageZoom,
   } = useVoteOcr({ month, settings, members, updateSettingsAndVotes });
+  const { voteCsvName, voteCsvError, isVoteCsvImporting, selectVoteCsv, clearVoteCsv } = useVoteCsvImport({ month, members, updateSettingsAndVotes });
   useBackButtonClose(voteImageDialogOpen, () => setVoteImageDialogOpen(false));
   const currentWorkflowIndex = WORKFLOW_STEPS.findIndex((item) => item.id === step);
   const appBarTitle = step === "home" ? "복사단 일정표" : (STEPS.find((item) => item.id === step)?.label ?? "복사단 일정표");
@@ -199,18 +202,18 @@ export function App() {
         <Box sx={{ minHeight: "100vh", bgcolor: "background.default", pb: 9 }}>
         <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: "divider" }}>
           <Toolbar sx={{ position: "relative", gap: 1.5, justifyContent: "space-between" }}>
-            {step === "home" ? (
-              <Box sx={{ width: 40, flexShrink: 0 }} />
-            ) : (
-              <IconButton edge="start" color="primary" aria-label="홈으로 돌아가기" onClick={() => setStep("home")}>
-                <ArrowBackIcon />
-              </IconButton>
-            )}
+            <Box sx={{ width: 88, flexShrink: 0 }}>
+              {step !== "home" && (
+                <IconButton edge="start" color="primary" aria-label="홈으로 돌아가기" onClick={() => setStep("home")}>
+                  <ArrowBackIcon />
+                </IconButton>
+              )}
+            </Box>
             <Box
               sx={{
                 position: "absolute",
-                left: 64,
-                right: 64,
+                left: 104,
+                right: 104,
                 top: "50%",
                 minWidth: 0,
                 textAlign: "center",
@@ -218,7 +221,12 @@ export function App() {
                 pointerEvents: "none",
               }}
             >
-              <Typography variant="h6" noWrap sx={{ fontWeight: 800 }}>
+              <Typography
+                component="h1"
+                variant="h6"
+                noWrap
+                sx={{ fontWeight: 800, fontSize: { xs: "1rem", sm: "1.25rem" } }}
+              >
                 {appBarTitle}
               </Typography>
               <Typography variant="body2" color="text.secondary" noWrap>
@@ -226,6 +234,7 @@ export function App() {
               </Typography>
             </Box>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", ml: "auto" }}>
+              <ScreenDescriptionButton description={STEP_DESCRIPTIONS[step]} />
               <IconButton edge="end" color="primary" aria-label="화면 메뉴 열기" onClick={(event) => setMenuAnchor(event.currentTarget)}>
                 <MenuIcon />
               </IconButton>
@@ -292,6 +301,11 @@ export function App() {
               voteConversionProgress={voteConversionProgress}
               voteConversionError={voteConversionError}
               isVoteConverting={isVoteConverting}
+              voteCsvName={voteCsvName}
+              voteCsvError={voteCsvError}
+              isVoteCsvImporting={isVoteCsvImporting}
+              selectVoteCsv={selectVoteCsv}
+              clearVoteCsv={clearVoteCsv}
               selectVoteImage={selectVoteImage}
               clearVoteImage={clearVoteImage}
               setVoteImageDialogOpen={setVoteImageDialogOpen}

@@ -75,12 +75,7 @@ export function GenerateScreen({
   }
 
   return (
-    <Screen
-      title="일정표"
-      description={
-        "일정표 생성을 누르면 설정과 투표결과를 기준으로 일정표를 만듭니다.\n생성 후 각 일정의 배정자와 메모를 직접 수정할 수 있습니다.\n배정할 사람이 없는 칸은 없음으로 표시됩니다.\n생성된 일정표는 PNG로 저장할 수 있습니다."
-      }
-    >
+    <Screen>
       {errorCount > 0 && (
         <Stack spacing={1}>
           {allIssues

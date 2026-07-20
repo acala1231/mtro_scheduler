@@ -30,12 +30,7 @@ export function HomeScreen({
   setStep: (step: AppStep) => void;
 }) {
   return (
-    <Screen
-      title="홈"
-      description={
-        "먼저 기준월을 선택한 뒤 일정편집, 투표결과 입력 순서로 진행합니다.\n기준월 영역을 누르면 월 선택 달력이 열립니다."
-      }
-    >
+    <Screen>
       <Paper
         variant="outlined"
         role="button"

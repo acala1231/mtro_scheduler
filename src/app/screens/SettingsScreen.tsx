@@ -24,12 +24,7 @@ export function SettingsScreen({
   resetScheduleColors: () => void;
 }) {
   return (
-    <Screen
-      title="설정"
-      description={
-        "해당 월에 사용할 복사일정과 차량봉사일정을 확인하고 수정합니다.\n일정 추가를 누르면 새 일정이 추가됩니다.\n초기화는 해당 월의 일요일 기본 일정으로 되돌립니다."
-      }
-    >
+    <Screen>
       <SettingsEditor
         settings={settings}
         updateSettings={updateSettings}

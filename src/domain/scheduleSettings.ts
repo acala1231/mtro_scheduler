@@ -126,10 +126,11 @@ export function addVoteSchedulesToSettings(
 }
 
 export function removeOcrSchedules(settings: ScheduleSettings, scope: "service" | "car" | "all"): ScheduleSettings {
+  const isPermanent = ({ source }: { source?: "ocr" | "import" }) => source !== "ocr" && source !== "import";
   return {
     ...settings,
-    serviceSchedules: scope === "car" ? settings.serviceSchedules : settings.serviceSchedules.filter(({ source }) => source !== "ocr"),
-    carSchedules: scope === "service" ? settings.carSchedules : settings.carSchedules.filter(({ source }) => source !== "ocr"),
+    serviceSchedules: scope === "car" ? settings.serviceSchedules : settings.serviceSchedules.filter(isPermanent),
+    carSchedules: scope === "service" ? settings.carSchedules : settings.carSchedules.filter(isPermanent),
   };
 }
 
