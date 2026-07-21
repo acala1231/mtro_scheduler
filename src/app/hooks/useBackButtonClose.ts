@@ -11,6 +11,24 @@ const openPopupStack: PopupEntry[] = [];
 let listenerInstalled = false;
 let ignoreNextPopupPopState = false;
 
+type HistoryState = Record<string, unknown>;
+
+export function createPopupHistoryState(state: unknown, popupId: string): HistoryState {
+  const preservedState = state !== null && typeof state === "object" ? state as HistoryState : {};
+  return {
+    ...preservedState,
+    mtroScheduler: { kind: "popup", popupId },
+  };
+}
+
+export function isPopupHistoryState(state: unknown, popupId: string): boolean {
+  if (state === null || typeof state !== "object") return false;
+  const namespace = (state as HistoryState).mtroScheduler;
+  if (namespace === null || typeof namespace !== "object") return false;
+  const popupState = namespace as HistoryState;
+  return popupState.kind === "popup" && popupState.popupId === popupId;
+}
+
 function removePopup(id: string) {
   for (let index = openPopupStack.length - 1; index >= 0; index -= 1) {
     if (openPopupStack[index].id === id) {
@@ -64,7 +82,7 @@ export function useBackButtonClose(open: boolean, onClose: () => void) {
     if (open && !isRegisteredRef.current) {
       openPopupStack.push({ id, onCloseRef, isRegisteredRef, isClosingByHistoryRef });
       isRegisteredRef.current = true;
-      window.history.pushState({ popupId: id }, "", window.location.href);
+      window.history.pushState(createPopupHistoryState(window.history.state, id), "", window.location.href);
       return;
     }
 
@@ -78,7 +96,7 @@ export function useBackButtonClose(open: boolean, onClose: () => void) {
         return;
       }
 
-      if (wasTopPopup && !isClosingByHistoryRef.current) {
+      if (wasTopPopup && !isClosingByHistoryRef.current && isPopupHistoryState(window.history.state, id)) {
         ignoreNextPopupPopState = true;
         window.history.back();
       }
@@ -94,7 +112,9 @@ export function useBackButtonClose(open: boolean, onClose: () => void) {
 
   return {
     closeWithoutHistoryBack() {
-      skipNextHistoryBackRef.current = true;
+      if (isRegisteredRef.current) {
+        skipNextHistoryBackRef.current = true;
+      }
       onCloseRef.current();
     },
   };

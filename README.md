@@ -33,6 +33,7 @@
 - html-to-image
 - dayjs
 - Vitest
+- Playwright
 
 ## 실행 방법
 
@@ -48,15 +49,41 @@ npm run dev
 ```bash
 npm test
 npm run build
+npx playwright install chromium
+npm run test:e2e
 ```
 
-빌드 시 번들 크기 경고가 표시될 수 있습니다. 현재 기준으로 이 경고는 빌드 실패가 아닙니다.
+`npm run test:e2e`는 매번 fresh production build를 만든 뒤 preview를 `http://127.0.0.1:4173/mtro_scheduler/`에 열어 실제 Chromium으로 검증합니다. 처음 한 번은 `npx playwright install chromium`으로 브라우저를 설치해야 합니다. CI에서는 앞 단계에서 이미 빌드하므로 중복 빌드를 피하는 `npm run test:e2e:ci`를 사용합니다.
+
+- 일반 Chromium suite: service worker를 차단하고 hash 경로, 브라우저 뒤로가기/앞으로가기, 메뉴 history, 제목 포커스를 검증합니다.
+- PWA Chromium suite: service worker를 허용하고 한 번 로드한 앱 셸의 오프라인 재실행을 검증합니다.
+
+전체 검증은 다음 순서로 실행할 수 있습니다.
+
+```bash
+npm test
+npm run build
+npm run test:e2e
+```
+
+빌드 시 번들 크기 경고가 표시될 수 있습니다. 현재 기준으로 이 경고는 빌드 실패가 아닙니다. E2E 실패 시 `test-results/`에 trace, 스크린샷, 비디오가 남고 HTML 보고서는 `playwright-report/`에 생성됩니다.
+
+Pull Request와 수동 실행에서는 `.github/workflows/ci.yml`이 Node.js 22로 단위 테스트, 프로덕션 빌드, 전체 Playwright suite를 실행합니다. 실패 자료는 GitHub Actions artifact에서 확인할 수 있습니다.
 
 ## 주요 구조
 
 ```text
 src/app/App.tsx
-  앱 최상위 화면 조립, 네비게이션, 주요 훅 연결
+  앱 모델, 공통 셸, 라우트 화면의 최상위 조립
+
+src/app/hooks/useAppModel.ts
+  앱 생명주기를 유지하는 상태와 화면 액션 조립
+
+src/app/components/AppShell.tsx
+  상단 앱바, 화면 메뉴, 하단 단계 내비게이션, PWA 프롬프트
+
+src/app/AppRoutes.tsx
+  경로별 화면과 화면 props 연결
 
 src/app/appConstants.tsx
   MUI 테마, 단계 메뉴, 단계 아이콘, 출력 역할 라벨

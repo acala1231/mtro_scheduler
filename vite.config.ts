@@ -2,8 +2,8 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig(({ command }) => ({
-  base: command === "serve" ? "/" : "/mtro_scheduler/",
+export default defineConfig(({ command, isPreview }) => ({
+  base: command === "serve" && !isPreview ? "/" : "/mtro_scheduler/",
   plugins: [
     react(),
     VitePWA({
@@ -53,5 +53,6 @@ export default defineConfig(({ command }) => ({
   ],
   test: {
     environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
   },
 }));
