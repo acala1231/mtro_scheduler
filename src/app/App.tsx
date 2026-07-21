@@ -28,6 +28,7 @@ import {
   type AppStep,
 } from "../domain/scheduleTypes";
 import { validateSettings, validateVotes, validateMembers } from "../domain/validators";
+import type { MemberSortKey } from "../domain/memberSorting";
 import { STEP_DESCRIPTIONS, STEP_ICONS, STEPS, theme } from "./appConstants";
 import { firstDateOfMonth, issueCounts, monthFromDayjs, monthTitle } from "./appUtils";
 import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
@@ -60,6 +61,7 @@ export function App() {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [monthAnchor, setMonthAnchor] = useState<HTMLElement | null>(null);
   const [memberQuery, setMemberQuery] = useState("");
+  const [memberSortKey, setMemberSortKey] = useState<MemberSortKey>("feastDay");
   const [schedulePreviewOpen, setSchedulePreviewOpen] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
   const {
@@ -129,7 +131,7 @@ export function App() {
   }, [result?.issues, settings, votes, members]);
   const counts = issueCounts(allIssues);
   const canGenerate = members.length > 0 && counts.errors === 0;
-  const visibleMembers = visibleMembersForQuery(memberQuery);
+  const visibleMembers = visibleMembersForQuery(memberQuery, memberSortKey);
   const selectedMonth = dayjs(firstDateOfMonth(month));
   const currentWorkflowIndex = WORKFLOW_STEPS.findIndex((item) => item.id === step);
   const appBarTitle = step === "home" ? "복사단 일정표" : (STEPS.find((item) => item.id === step)?.label ?? "복사단 일정표");
@@ -294,6 +296,7 @@ export function App() {
           {step === "members" && (
             <MembersScreen
               memberQuery={memberQuery}
+              memberSortKey={memberSortKey}
               membersFile={membersFile}
               visibleMembers={visibleMembers}
               memberError={memberError}
@@ -304,6 +307,7 @@ export function App() {
               updateMember={updateMember}
               deleteMember={deleteMember}
               setMemberQuery={setMemberQuery}
+              setMemberSortKey={setMemberSortKey}
             />
           )}
 

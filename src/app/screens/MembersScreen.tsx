@@ -12,7 +12,11 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   Grid,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
@@ -20,6 +24,8 @@ import {
 import { SAMPLE_MEMBERS_CSV, membersToCsv } from "../../data/memberCsv";
 import { downloadTextFile } from "../../export/downloadTextFile";
 import type { Member, MembersFile } from "../../domain/scheduleTypes";
+import type { MemberSortKey } from "../../domain/memberSorting";
+import { memberCountLabel } from "../memberListPresentation";
 import { ActionMenu } from "../components/ActionMenu";
 import { MemberCard, type MemberDraft } from "../components/MemberCard";
 import { Screen } from "../components/Screen";
@@ -34,8 +40,24 @@ function downloadCurrentMembersCsv(members: Member[]) {
   downloadTextFile(membersToCsv(members), "members.csv", "text/csv;charset=utf-8");
 }
 
+export function MemberCountStatus({ query, visibleCount, totalCount }: { query: string; visibleCount: number; totalCount: number }) {
+  return (
+    <Typography
+      variant="body2"
+      color="text.secondary"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      sx={{ flexShrink: 0 }}
+    >
+      {memberCountLabel(query, visibleCount, totalCount)}
+    </Typography>
+  );
+}
+
 export function MembersScreen({
   memberQuery,
+  memberSortKey,
   membersFile,
   visibleMembers,
   memberError,
@@ -46,8 +68,10 @@ export function MembersScreen({
   updateMember,
   deleteMember,
   setMemberQuery,
+  setMemberSortKey,
 }: {
   memberQuery: string;
+  memberSortKey: MemberSortKey;
   membersFile: MembersFile | null;
   visibleMembers: Array<{ key: string; member: Member; index: number }>;
   memberError: string;
@@ -58,6 +82,7 @@ export function MembersScreen({
   updateMember: (index: number, patch: MemberDraft) => boolean;
   deleteMember: (index: number) => void;
   setMemberQuery: (query: string) => void;
+  setMemberSortKey: (sortKey: MemberSortKey) => void;
 }) {
   const hasMembers = Boolean(membersFile?.members.length);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -110,15 +135,11 @@ export function MembersScreen({
         <CardContent>
           <Stack spacing={1.5}>
             <Stack direction="row" sx={{ flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
-              <Stack spacing={0.25}>
-                <Typography variant="body2" color="text.secondary">
-                  {membersFile ? `총 ${membersFile.members.length}명` : "총 0명"}
-                </Typography>
-              </Stack>
               <Stack
                 direction={{ xs: hasMembers ? "row" : "column", sm: "row" }}
                 sx={{
                   width: { xs: hasMembers ? "auto" : "100%", sm: "auto" },
+                  ml: "auto",
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
                   gap: 1,
@@ -185,8 +206,23 @@ export function MembersScreen({
         <>
           {membersFile && (
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ alignItems: { sm: "center" } }}>
-              <TextField label="이름·세례명·축일·별칭 검색" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="예: 홍길동, 베드로, 06/29" fullWidth />
-              <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>{visibleMembers.length}명 · 축일순</Typography>
+              <TextField size="small" label="이름·세례명·축일·별칭 검색" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="예: 홍길동, 베드로, 06/29" fullWidth />
+              <FormControl size="small" sx={{ minWidth: { sm: 150 } }}>
+                <InputLabel id="member-sort-label">정렬 기준</InputLabel>
+                <Select
+                  labelId="member-sort-label"
+                  label="정렬 기준"
+                  value={memberSortKey}
+                  onChange={(event) => setMemberSortKey(event.target.value as MemberSortKey)}
+                >
+                  <MenuItem value="name">이름순</MenuItem>
+                  <MenuItem value="baptismalName">세례명순</MenuItem>
+                  <MenuItem value="feastDay">축일순</MenuItem>
+                  <MenuItem value="assignmentCount">배정 적은순</MenuItem>
+                  <MenuItem value="assignmentCountDesc">배정 많은순</MenuItem>
+                </Select>
+              </FormControl>
+              <MemberCountStatus query={memberQuery} visibleCount={visibleMembers.length} totalCount={membersFile.members.length} />
             </Stack>
           )}
           <Grid container spacing={1.5}>

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { loadStoredMembers, parseMembersCsvFile, removeStoredMembers, saveStoredMembers } from "../../data/memberRepository";
 import { type GenerateScheduleResult, type Member, type MembersFile } from "../../domain/scheduleTypes";
-import { compareMembersByFeastDay } from "../../domain/feastDay";
 import { createMember, updateMember as normalizeMemberUpdate } from "../../domain/memberEditing";
+import { sortVisibleMembers, type MemberSortKey } from "../../domain/memberSorting";
 
 export type VisibleMember = {
   key: string;
@@ -165,12 +165,12 @@ export function useMembers({
     onMembersChanged();
   }
 
-  function visibleMembers(memberQuery: string): VisibleMember[] {
+  function visibleMembers(memberQuery: string, sortKey: MemberSortKey): VisibleMember[] {
     const query = memberQuery.trim();
-    return (membersFile?.members ?? [])
+    const filteredMembers = (membersFile?.members ?? [])
       .map((member, index) => ({ key: memberKey(member, index), index, member }))
-      .filter(({ member }) => [member.name, member.baptismalName, member.feastDay, member.alias].some((value) => value?.includes(query)))
-      .sort((left, right) => compareMembersByFeastDay(left.member, right.member));
+      .filter(({ member }) => [member.name, member.baptismalName, member.feastDay, member.alias].some((value) => value?.includes(query)));
+    return sortVisibleMembers(filteredMembers, sortKey);
   }
 
   return {
