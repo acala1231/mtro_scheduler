@@ -22,15 +22,23 @@ function isSafariBrowser() {
   return userAgent.includes("safari") && !userAgent.includes("chrome") && !userAgent.includes("crios") && !userAgent.includes("fxios");
 }
 
-function isPromptSnoozed() {
-  const dismissedUntil = Number(window.localStorage.getItem(INSTALL_PROMPT_DISMISSED_UNTIL_KEY));
-  return Number.isFinite(dismissedUntil) && Date.now() < dismissedUntil;
+export function isPromptSnoozed(storage?: Pick<Storage, "getItem">) {
+  try {
+    const dismissedUntil = Number((storage ?? window.localStorage).getItem(INSTALL_PROMPT_DISMISSED_UNTIL_KEY));
+    return Number.isFinite(dismissedUntil) && Date.now() < dismissedUntil;
+  } catch {
+    return false;
+  }
 }
 
-function snoozePromptForToday() {
+export function snoozePromptForToday(storage?: Pick<Storage, "setItem">) {
   const dismissedUntil = new Date();
   dismissedUntil.setHours(24, 0, 0, 0);
-  window.localStorage.setItem(INSTALL_PROMPT_DISMISSED_UNTIL_KEY, String(dismissedUntil.getTime()));
+  try {
+    (storage ?? window.localStorage).setItem(INSTALL_PROMPT_DISMISSED_UNTIL_KEY, String(dismissedUntil.getTime()));
+  } catch {
+    // 저장소가 차단되어도 현재 대화상자는 정상적으로 닫는다.
+  }
 }
 
 export function PwaInstallPrompt() {

@@ -10,7 +10,7 @@ import { applyVoteOcrImport } from "../../domain/voteOcrImport";
 import { importRevision } from "../../domain/importRevision";
 import { parseVoteText } from "../../domain/voteParser";
 import { monthTitle, prepareImageForOcr, sanitizeVoteOcrText, scoreVoteParse, type PreparedOcrVariant } from "../appUtils";
-import { importStatusReducer } from "./importStatus";
+import { importStatusReducer, staleImportMessage } from "./importStatus";
 
 function resolveVoteEntryMembers(entries: VoteEntry[], members: Member[]): OcrResolvedVoteEntry[] {
   return entries.flatMap<OcrResolvedVoteEntry>((entry) => {
@@ -37,11 +37,13 @@ export function useVoteOcr({
   month,
   settings,
   members,
+  votes,
   updateSettingsAndVotes,
 }: {
   month: string;
   settings: ScheduleSettings;
   members: Member[];
+  votes: VoteData;
   updateSettingsAndVotes: (
     updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData },
   ) => void;
@@ -118,13 +120,13 @@ export function useVoteOcr({
     }
     let stale = false;
     updateSettingsAndVotes((current) => {
-      if (latestMonthRef.current !== month || importRevision(month, current.settings, latestMembersRef.current) !== requestRevision) { stale = true; return current; }
+      if (latestMonthRef.current !== month || importRevision(month, current.settings, latestMembersRef.current, current.votes) !== requestRevision) { stale = true; return current; }
       return applyVoteOcrImport(current, {
         month, rawText: bestAttempt.sanitizedRawText, serviceVotes, carVotes, voteCounts: bestAttempt.parsed.voteCounts,
       });
     });
     if (stale) {
-      dispatch({ type: "error", fileName, message: "처리 중 기준월, 일정 또는 명단이 변경되었습니다. 이미지를 다시 선택해 주세요. 기존 투표결과는 유지됩니다." });
+      dispatch({ type: "error", fileName, message: `${staleImportMessage("이미지")} 기존 투표결과는 유지됩니다.` });
       return;
     }
     dispatch({ type: "success", fileName, message: `복사일정 ${serviceVotes.length}건, 차량봉사 ${carVotes.length}건을 가져왔습니다.` });
@@ -165,7 +167,7 @@ export function useVoteOcr({
     const requestId = ++requestIdRef.current;
     dispatch({ type: "start", fileName: file.name });
     const requestSettings = removeOcrSchedules(settings, "all");
-    const requestRevision = importRevision(month, settings, members);
+    const requestRevision = importRevision(month, settings, members, votes);
     setVoteConversionProgress(5);
 
     try {

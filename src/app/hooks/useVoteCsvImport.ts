@@ -3,12 +3,13 @@ import { readVoteCsvFile } from "../../data/voteCsvRepository";
 import { importVoteCsv } from "../../domain/voteCsvImport";
 import type { Member, ScheduleSettings, VoteData } from "../../domain/scheduleTypes";
 import { importRevision } from "../../domain/importRevision";
-import { importStatusReducer } from "./importStatus";
+import { importStatusReducer, staleImportMessage } from "./importStatus";
 
-export function useVoteCsvImport({ month, settings, members, updateSettingsAndVotes }: {
+export function useVoteCsvImport({ month, settings, members, votes, updateSettingsAndVotes }: {
   month: string;
   settings: ScheduleSettings;
   members: Member[];
+  votes: VoteData;
   updateSettingsAndVotes: (updater: (current: { settings: ScheduleSettings; votes: VoteData }) => { settings: ScheduleSettings; votes: VoteData }) => void;
 }) {
   const [status, dispatch] = useReducer(importStatusReducer, { state: "idle" });
@@ -28,7 +29,7 @@ export function useVoteCsvImport({ month, settings, members, updateSettingsAndVo
     const requestId = ++requestIdRef.current;
     if (!file) { dispatch({ type: "reset" }); return; }
     const fileName = file.name;
-    const requestRevision = importRevision(month, settings, members);
+    const requestRevision = importRevision(month, settings, members, votes);
     dispatch({ type: "start", fileName });
     try {
       const text = await readVoteCsvFile(file);
@@ -36,12 +37,12 @@ export function useVoteCsvImport({ month, settings, members, updateSettingsAndVo
       let counts = { service: 0, car: 0 };
       let stale = false;
       updateSettingsAndVotes(({ settings: latestSettings, votes }) => {
-        if (latestMonthRef.current !== month || importRevision(month, latestSettings, latestMembersRef.current) !== requestRevision) { stale = true; return { settings: latestSettings, votes }; }
+        if (latestMonthRef.current !== month || importRevision(month, latestSettings, latestMembersRef.current, votes) !== requestRevision) { stale = true; return { settings: latestSettings, votes }; }
         const imported = importVoteCsv(text, month, latestSettings, members);
         counts = { service: imported.votes.serviceVotes.length, car: imported.votes.carVotes.length };
         return imported;
       });
-      if (stale) throw new Error("처리 중 기준월, 일정 또는 명단이 변경되었습니다. 파일을 다시 선택해 주세요.");
+      if (stale) throw new Error(staleImportMessage("파일"));
       dispatch({ type: "success", fileName, message: `복사일정 ${counts.service}건, 차량봉사 ${counts.car}건을 가져왔습니다.` });
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
